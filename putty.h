@@ -244,6 +244,8 @@ void term_scroll (int, int);
 void term_pwron (void);
 void term_clrsb (void);
 void term_mouse (Mouse_Button, Mouse_Action, int, int);
+void term_copy(void);
+void term_paste(void);
 void term_deselect (void);
 void term_update (void);
 void term_invalidate(void);
