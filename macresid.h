@@ -1,4 +1,4 @@
-/* $Id: macresid.h,v 1.1.2.5 1999/03/11 21:40:32 ben Exp $ */
+/* $Id: macresid.h,v 1.1.2.6 1999/04/02 12:58:03 ben Exp $ */
 
 /*
  * macresid.h -- Mac resource IDs
@@ -36,6 +36,7 @@
 #define wFatal		128
 #define wAbout		129
 #define wiAboutLicence		1
+#define wiAboutVersion		3
 #define wTerminal	130
 #define wLicence	131
 

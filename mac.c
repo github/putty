@@ -1,4 +1,4 @@
-/* $Id: mac.c,v 1.1.2.22 1999/04/01 21:26:44 ben Exp $ */
+/* $Id: mac.c,v 1.1.2.23 1999/04/02 12:58:02 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -40,8 +40,10 @@
 #include <Devices.h>
 #include <DiskInit.h>
 #include <Gestalt.h>
+#include <Resources.h>
 #include <ToolUtils.h>
 
+#include <assert.h>
 #include <limits.h>
 #include <stdarg.h>
 #include <stdlib.h>		/* putty.h needs size_t */
@@ -64,11 +66,13 @@ static void mac_eventloop(void);
 static void mac_event(EventRecord *);
 static void mac_contentclick(WindowPtr, EventRecord *);
 static void mac_growwindow(WindowPtr, EventRecord *);
-static void mac_activatewindow(WindowPtr, Boolean);
+static void mac_activatewindow(WindowPtr, EventRecord *);
+static void mac_activateabout(WindowPtr, EventRecord *);
 static void mac_updatewindow(WindowPtr);
 static void mac_keypress(EventRecord *);
 static int mac_windowtype(WindowPtr);
 static void mac_menucommand(long);
+static void mac_openabout(void);
 static void mac_adjustcursor(RgnHandle);
 static void mac_adjustmenus(void);
 static void mac_closewindow(WindowPtr);
@@ -205,8 +209,7 @@ static void mac_event(EventRecord *event) {
         mac_keypress(event);
         break;
       case activateEvt:
-	mac_activatewindow((WindowPtr)event->message,
-			   (event->modifiers & activeFlag) != 0);
+	mac_activatewindow((WindowPtr)event->message, event);
         break;
       case updateEvt:
         mac_updatewindow((WindowPtr)event->message);
@@ -246,14 +249,32 @@ static void mac_growwindow(WindowPtr window, EventRecord *event) {
     }
 }
 
-static void mac_activatewindow(WindowPtr window, Boolean active) {
+static void mac_activatewindow(WindowPtr window, EventRecord *event) {
+    int active;
 
+    active = (event->modifiers & activeFlag) != 0;
     mac_adjustmenus();
     switch (mac_windowtype(window)) {
       case wTerminal:
 	mac_activateterm(window, active);
 	break;
+      case wAbout:
+	mac_activateabout(window, event);
+	break;
     }
+}
+
+static void mac_activateabout(WindowPtr window, EventRecord *event) {
+    DialogItemType itemtype;
+    Handle itemhandle;
+    short item;
+    Rect itemrect;
+    int active;
+
+    active = (event->modifiers & activeFlag) != 0;
+    GetDialogItem(window, wiAboutLicence, &itemtype, &itemhandle, &itemrect);
+    HiliteControl((ControlHandle)itemhandle, active ? 0 : 255);
+    DialogSelect(event, &window, &item);
 }
 
 static void mac_updatewindow(WindowPtr window) {
@@ -328,10 +349,7 @@ static void mac_menucommand(long result) {
       case mApple:
         switch (item) {
           case iAbout:
-	    if (windows.about)
-		SelectWindow(windows.about);
-	    else
-		windows.about = GetNewDialog(wAbout, NULL, (WindowPtr)-1);
+	    mac_openabout();
             goto done;
           default:
             GetMenuItemText(GetMenuHandle(mApple), item, da);
@@ -361,6 +379,28 @@ static void mac_menucommand(long result) {
     }
   done:
     HiliteMenu(0);
+}
+
+static void mac_openabout(void) {
+    DialogItemType itemtype;
+    Handle item;
+    VersRecHndl vers;
+    Rect box;
+    StringPtr longvers;
+
+    if (windows.about)
+	SelectWindow(windows.about);
+    else {
+	windows.about = GetNewDialog(wAbout, NULL, (WindowPtr)-1);
+	/* XXX check we're using the right resource file? */
+	vers = (VersRecHndl)GetResource('vers', 1);
+	assert(vers != NULL && *vers != NULL);
+	longvers = (*vers)->shortVersion + (*vers)->shortVersion[0] + 1;
+	GetDialogItem(windows.about, wiAboutVersion, &itemtype, &item, &box);
+	assert(itemtype & kStaticTextDialogItem);
+	SetDialogItemText(item, longvers);
+	ShowWindow(windows.about);
+    }
 }
 
 static void mac_closewindow(WindowPtr window) {

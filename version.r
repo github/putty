@@ -19,6 +19,6 @@ resource 'vers' (1, purgeable) {
     PUTTY_VERS_SHORT_STR,
 
     PUTTY_VERS_LONG_STR " (" BUILD_ARCH ")\n"
-    "Copyright \$a9 Simon Tatham 1997-9",
+    "Copyright \$a9 Simon Tatham 1999",
 };
 

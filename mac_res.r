@@ -1,4 +1,4 @@
-/* $Id: mac_res.r,v 1.1.2.16 1999/04/01 21:27:36 ben Exp $ */
+/* $Id: mac_res.r,v 1.1.2.17 1999/04/02 12:58:02 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -404,9 +404,9 @@ resource 'CNTL' (cVScroll, "vscroll", purgeable) {
 /* "About" box */
 
 resource 'DLOG' (wAbout, "about", purgeable) {
-    { 0, 0, 120, 186 },
+    { 0, 0, 120, 240 },
     noGrowDocProc,
-    visible,
+    invisible,
     goAway,
     wAbout,		/* RefCon -- identifies the window to PuTTY */
     wAbout,		/* DITL ID */
@@ -422,13 +422,13 @@ resource 'dlgx' (wAbout, "about", purgeable) {
 
 resource 'DITL' (wAbout, "about", purgeable) {
     {
-	{ 87, 13, 107, 173 },
+	{ 87, 13, 107, 227 },
 	Button { enabled, "View Licence" },
-	{ 13, 13, 29, 173 },
+	{ 13, 13, 29, 227 },
 	StaticText { disabled, "PuTTY"},
-	{ 42, 13, 74, 173 },
-	StaticText { disabled, "Dev 0.45 Mac 0\n"
-			       "© 1997-9 Simon Tatham"},
+	{ 42, 13, 74, 227 },
+	StaticText { disabled, "Some version or other\n"
+			       "Copyright © 1997-9 Simon Tatham"},
     }
 };
 
