@@ -1,4 +1,4 @@
-/* $Id: macterm.c,v 1.1.2.18 1999/03/11 23:23:45 ben Exp $ */
+/* $Id: macterm.c,v 1.1.2.19 1999/03/13 18:23:24 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -56,6 +56,11 @@
 #define DEFAULT_BG_BOLD	19
 #define CURSOR_FG	22
 #define CURSOR_FG_BOLD	23
+
+#define PTOCC(x) ((x) < 0 ? -(-(x - font_width - 1) / font_width) : \
+			    (x) / font_width)
+#define PTOCR(y) ((y) < 0 ? -(-(y - font_height - 1) / font_height) : \
+			    (y) / font_height)
 
 struct mac_session {
     short		fontnum;
@@ -263,8 +268,8 @@ static void text_click(struct mac_session *s, EventRecord *event) {
     localwhere = event->where;
     GlobalToLocal(&localwhere);
 
-    col = localwhere.h / font_width;
-    row = localwhere.v / font_height;
+    col = PTOCC(localwhere.h);
+    row = PTOCR(localwhere.v);
     if (event->when - lastwhen < GetDblTime() &&
 	row == lastrow && col == lastcol && s == lastsess)
 	lastact = (lastact == MA_CLICK ? MA_2CLK :
@@ -279,14 +284,14 @@ static void text_click(struct mac_session *s, EventRecord *event) {
     lastcol = col;
     while (StillDown()) {
 	GetMouse(&localwhere);
-	col = localwhere.h / font_width;
-	row = localwhere.v / font_height;
+	col = PTOCC(localwhere.h);
+	row = PTOCR(localwhere.v);
 	term_mouse(event->modifiers & shiftKey ? MB_EXTEND : MB_SELECT,
 		   MA_DRAG, col, row);
 	if (row > rows - 1)
 	    term_scroll(0, row - (rows - 1));
-	else if (row <= 0)
-	    term_scroll(0, row - 1);
+	else if (row < 0)
+	    term_scroll(0, row);
     }
     term_mouse(event->modifiers & shiftKey ? MB_EXTEND : MB_SELECT, MA_RELEASE,
 	       col, row);
@@ -295,6 +300,7 @@ static void text_click(struct mac_session *s, EventRecord *event) {
 
 void write_clip(void *data, int len) {
     
+    SysBeep(30);
     if (ZeroScrap() != noErr)
 	return;
     PutScrap(len, 'TEXT', data);
