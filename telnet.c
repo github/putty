@@ -1,4 +1,6 @@
-#ifndef macintosh
+#ifdef macintosh
+#include <mac.h>
+#else /* not macintosh */
 #include <windows.h>
 #include <winsock.h>
 #endif /* not macintosh */
