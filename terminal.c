@@ -2,7 +2,6 @@
 #include <windows.h>
 #endif /* not macintosh */
 
-#include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -28,7 +27,6 @@ static int curs_x, curs_y;	       /* cursor */
 static int save_x, save_y;	       /* saved cursor position */
 static int marg_t, marg_b;	       /* scroll margins */
 static int dec_om;		       /* DEC origin mode flag */
-static int lfhascr;		       /* Auto-cr mode flag */
 static int wrap, wrapnext;	       /* wrap flags */
 static int insert;		       /* insert-mode flag */
 static int cset;		       /* 0 or 1: which char set */
@@ -63,10 +61,9 @@ static int nl_count;
 
 static enum {
     TOPLEVEL, IGNORE_NEXT,
-    SEEN_ESC, SEEN_CSI, SEEN_GZD4, SEEN_G1D4,
+    SEEN_ESC, SEEN_CSI, SET_GL, SET_GR,
     SEEN_OSC, SEEN_OSC_P, SEEN_OSC_W, OSC_STRING, OSC_MAYBE_ST,
-    SEEN_ESCHASH,
-    SEEN_ESC_CONFUSED, SEEN_CSI_CONFUSED,
+    SEEN_ESCHASH
 } termstate;
 
 static enum {
@@ -121,7 +118,6 @@ static void power_on(void) {
     alt_cset = cset = 0;
     cset_attr[0] = cset_attr[1] = ATTR_ASCII;
     rvideo = 0;
-    lfhascr = cfg.lfhascr;
     save_attr = curr_attr = ATTR_DEFAULT;
     app_cursor_keys = cfg.app_cursor;
     app_keypad_keys = cfg.app_keypad;
@@ -583,20 +579,6 @@ static void do_osc(void) {
     }
 }
 
-enum c0 {
-    NUL, SOH, STX, ETX, EOT, ENQ, ACK, BEL,
-    BS, HT, LF, VT, FF, CR, SO, SI,
-    DLE, DC1, DC2, DC3, DC4, NAK, SYN, ETB,
-    CAN, EM, SUB, ESC, IS1, IS2, IS3, IS4
-};
-
-enum c1 {
-    BPH = 0x82, NBH, IND, NEL, SSA, ESA,
-    HTS, HTJ, VTS, PLD, PLU, RI, SS1, SS2,
-    DCS, PU1, PU2, STS, CCH, MW, SPA, EPA,
-    SOS, SCI = 0x9a, CSI, ST, OSC, PM, APC
-};
-
 /*
  * Remove everything currently in `inbuf' and stick it up on the
  * in-memory display. There's a big state machine in here to
@@ -605,17 +587,15 @@ enum c1 {
 void term_out(void) {
     int c;
     int must_update = FALSE;
-    int reprocess = FALSE;
 
-    while (reprocess || (c = inbuf_getc()) != -1) {
+    while ( (c = inbuf_getc()) != -1) {
 #ifdef LOG
-	if (!reprocess) {
+	{
 	    static FILE *fp = NULL;
 	    if (!fp) fp = fopen("putty.log", "wb");
 	    if (fp) fputc (c, fp);
 	}
 #endif
-	reprocess = FALSE;
 	switch (termstate) {
 	  case TOPLEVEL:
 	    do_toplevel:
@@ -639,6 +619,25 @@ void term_out(void) {
 		disptop = scrtop;
 		must_update = TRUE;
 		break;
+	      case '\016':
+		cset = 1;
+		break;
+	      case '\017':
+		cset = 0;
+		break;
+	      case '\033':
+		termstate = SEEN_ESC;
+		break;
+	      case 0233:
+		termstate = SEEN_CSI;
+		esc_nargs = 1;
+		esc_args[0] = ARG_DEFAULT;
+		esc_query = FALSE;
+		break;
+	      case 0235:
+		termstate = SEEN_OSC;
+		esc_args[0] = 0;
+		break;
 	      case '\015':
 		curs_x = 0;
 		wrapnext = FALSE;
@@ -649,12 +648,11 @@ void term_out(void) {
 	      case '\013':
 	      case '\014':
 	      case '\012':
-	      case IND:
 		if (curs_y == marg_b)
 		    scroll (marg_t, marg_b, 1, TRUE);
 		else if (curs_y < rows-1)
 		    curs_y++;
-                if (lfhascr && c != IND)
+                if (cfg.lfhascr)
                     curs_x = 0;
 		fix_cpos;
 		wrapnext = FALSE;
@@ -675,56 +673,8 @@ void term_out(void) {
 		disptop = scrtop;
 		must_update = TRUE;
 		break;
-	      case '\016':
-		cset = 1;
-		break;
-	      case '\017':
-		cset = 0;
-		break;
-	      case '\033':
-		termstate = SEEN_ESC;
-		break;
-	      case NEL:		       /* exactly equivalent to CR-LF */
-		curs_x = 0;
-		wrapnext = FALSE;
-		if (curs_y == marg_b)
-		    scroll (marg_t, marg_b, 1, TRUE);
-		else if (curs_y < rows-1)
-		    curs_y++;
-		fix_cpos;
-		wrapnext = FALSE;
-		nl_count++;
-		disptop = scrtop;
-		break;
-	      case HTS:		       /* set a tab */
-		tabs[curs_x] = TRUE;
-		break;
-	      case RI:		       /* reverse index - backwards LF */
-		if (curs_y == marg_t)
-		    scroll (marg_t, marg_b, -1, TRUE);
-		else if (curs_y > 0)
-		    curs_y--;
-		fix_cpos;
-		wrapnext = FALSE;
-		disptop = scrtop;
-		must_update = TRUE;
-		break;
-	      case SCI:		       /* terminal type query */
-		/* This sequence is standardised as something else entirely. */
-		back->send ("\033[?6c", 5);
-		break;
-	      case 0233:
-		termstate = SEEN_CSI;
-		esc_nargs = 1;
-		esc_args[0] = ARG_DEFAULT;
-		esc_query = FALSE;
-		break;
-	      case 0235:
-		termstate = SEEN_OSC;
-		esc_args[0] = 0;
-		break;
 	      default:
-		if (c >= ' ' && c < 0x7f || c >= 0xa0 ) {
+		if (c >= ' ' && c != 0234) {
 		    if (wrapnext) {
 			cpos[1] = ATTR_WRAPPED;
 			if (curs_y == marg_b)
@@ -749,7 +699,6 @@ void term_out(void) {
 		    }
 		    disptop = scrtop;
 		}
-		break;
 	    }
 	    break;
 	  case IGNORE_NEXT:
@@ -768,29 +717,32 @@ void term_out(void) {
 	    }
 	    /* else fall through */
 	  case SEEN_ESC:
-	    /*
-	     * According to ECMA-35, an escape sequence consists of
-	     * ESC, a sequence (possibly empty) of intermediate bytes
-	     * from column 02 (SPACE--/), and a final byte from
-	     * columns 03-07 (0--~).
-	     */
 	    termstate = TOPLEVEL;
-	    if (c >= 0x40 && c < 0x60) {
-		/* Fe sequences -- C1 control as an escape sequence */
-		c += 0x40;
-		reprocess = TRUE;
-	    } else switch (c) {
-		/* nF sequences -- with intermediate bytes */
-	      case '#':		       /* Single control functions */
-		termstate = SEEN_ESCHASH;
+	    switch (c) {
+	      case '\005': case '\007': case '\b': case '\016': case '\017':
+	      case '\033': case 0233: case 0234: case 0235: case '\015':
+	      case '\013': case '\014': case '\012': case '\t':
+		termstate = TOPLEVEL;
+		goto do_toplevel;      /* hack... */
+	      case ' ':		       /* some weird sequence? */
+		termstate = IGNORE_NEXT;
 		break;
-	      case '(':		       /* GZD4: should set G0 */
-		termstate = SEEN_GZD4;
+	      case '[':		       /* enter CSI mode */
+		termstate = SEEN_CSI;
+		esc_nargs = 1;
+		esc_args[0] = ARG_DEFAULT;
+		esc_query = FALSE;
 		break;
-	      case ')':		       /* G1D4: should set G1 */
-		termstate = SEEN_G1D4;
+	      case ']':		       /* xterm escape sequences */
+		termstate = SEEN_OSC;
+		esc_args[0] = 0;
 		break;
-		/* Fp sequences -- private control functions */
+	      case '(':		       /* should set GL */
+		termstate = SET_GL;
+		break;
+	      case ')':		       /* should set GR */
+		termstate = SET_GR;
+		break;
 	      case '7':		       /* save cursor */
 		save_cursor (TRUE);
 		break;
@@ -805,47 +757,63 @@ void term_out(void) {
 	      case '>':
 		app_keypad_keys = FALSE;
 		break;
-		/* Fs sequences -- standardised control functions */
-	      case 'c':		       /* RIS: restore power-on settings */
+	      case 'D':		       /* exactly equivalent to LF */
+		if (curs_y == marg_b)
+		    scroll (marg_t, marg_b, 1, TRUE);
+		else if (curs_y < rows-1)
+		    curs_y++;
+		fix_cpos;
+		wrapnext = FALSE;
+		disptop = scrtop;
+		nl_count++;
+		break;
+	      case 'E':		       /* exactly equivalent to CR-LF */
+		curs_x = 0;
+		wrapnext = FALSE;
+		if (curs_y == marg_b)
+		    scroll (marg_t, marg_b, 1, TRUE);
+		else if (curs_y < rows-1)
+		    curs_y++;
+		fix_cpos;
+		wrapnext = FALSE;
+		nl_count++;
+		disptop = scrtop;
+		break;
+	      case 'M':		       /* reverse index - backwards LF */
+		if (curs_y == marg_t)
+		    scroll (marg_t, marg_b, -1, TRUE);
+		else if (curs_y > 0)
+		    curs_y--;
+		fix_cpos;
+		wrapnext = FALSE;
+		disptop = scrtop;
+		must_update = TRUE;
+		break;
+	      case 'Z':		       /* terminal type query */
+		back->send ("\033[?6c", 5);
+		break;
+	      case 'c':		       /* restore power-on settings */
 		power_on();
 		fix_cpos;
 		disptop = scrtop;
 		must_update = TRUE;
 		break;
-	      default:
-		termstate = SEEN_ESC_CONFUSED;
-		reprocess = TRUE;
+	      case '#':		       /* ESC # 8 fills screen with Es :-) */
+		termstate = SEEN_ESCHASH;
+		break;
+	      case 'H':		       /* set a tab */
+		tabs[curs_x] = TRUE;
 		break;
 	    }
 	    break;
-	  case SEEN_ESC_CONFUSED:
-	    /*
-	     * We're in an escape sequence, but we no longer know what
-	     * it means and we just want it to go away
-	     */
-	    termstate = TOPLEVEL;
-	    if (c < 0x20 || c >= 0x7f)
-		/*
-		 * ECMA-35 says this isn't allowed, so we can do what
-		 * we like.
-		 */
-		reprocess = TRUE;
-	    else if (c <= 0x30)
-		/* Intermediate byte -- more to come */
-		termstate = SEEN_ESC_CONFUSED;
-	    /* Otherwise, that was a final byte and we're free! */
-	    break;
 	  case SEEN_CSI:
-	    /*
-	     * In theory, a control sequence consists of CSI, then a
-	     * sequence (possibly empty) of parameter bytes (0--?)
-	     * then a sequence (possibly empty) of intermediate bytes
-	     * (SPACE--/), then a final byte (@--~).  We're rather
-	     * more relaxed, and don't differentiate between parameter
-	     * and intermediate bytes.
-	     */
 	    termstate = TOPLEVEL;      /* default */
 	    switch (c) {
+	      case '\005': case '\007': case '\b': case '\016': case '\017':
+	      case '\033': case 0233: case 0234: case 0235: case '\015':
+	      case '\013': case '\014': case '\012': case '\t':
+		termstate = TOPLEVEL;
+		goto do_toplevel;      /* hack... */
 	      case '0': case '1': case '2': case '3': case '4':
 	      case '5': case '6': case '7': case '8': case '9':
 		if (esc_nargs <= ARGS_MAX) {
@@ -1091,29 +1059,19 @@ void term_out(void) {
 		    }
 		}
 		break;
-	      default:
-		termstate = SEEN_CSI_CONFUSED;
-		reprocess = TRUE;
-		break;
 	    }
 	    break;
-	  case SEEN_CSI_CONFUSED:
-	    termstate = TOPLEVEL;
-	    if (c < 0x20 || c >= 0x7f)
-		reprocess = TRUE;
-	    else if (c < 0x40)
-		termstate = SEEN_CSI_CONFUSED;
-	  case SEEN_GZD4:
-	  case SEEN_G1D4:
+	  case SET_GL:
+	  case SET_GR:
 	    switch (c) {
 	      case 'A':
-		cset_attr[termstate == SEEN_GZD4 ? 0 : 1] = ATTR_GBCHR;
+		cset_attr[termstate == SET_GL ? 0 : 1] = ATTR_GBCHR;
 		break;
 	      case '0':
-		cset_attr[termstate == SEEN_GZD4 ? 0 : 1] = ATTR_LINEDRW;
+		cset_attr[termstate == SET_GL ? 0 : 1] = ATTR_LINEDRW;
 		break;
 	      default:		       /* specifically, 'B' */
-		cset_attr[termstate == SEEN_GZD4 ? 0 : 1] = ATTR_ASCII;
+		cset_attr[termstate == SET_GL ? 0 : 1] = ATTR_ASCII;
 		break;
 	    }
 	    termstate = TOPLEVEL;
@@ -1514,7 +1472,7 @@ void term_mouse (Mouse_Button b, Mouse_Action a, int x, int y) {
 		back->send (q, p-q);
 		if (p <= data+len-sizeof(sel_nl) &&
 		    !memcmp(p, sel_nl, sizeof(sel_nl))) {
-		    back->send ("\015", 1);
+		    back->send ("\r", 1);
 		    p += sizeof(sel_nl);
 		}
 		q = p;
