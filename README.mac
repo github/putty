@@ -1,4 +1,4 @@
-$Id: README.mac,v 1.1.2.2 1999/03/29 23:55:06 ben Exp $
+$Id: README.mac,v 1.1.2.3 1999/03/30 19:46:44 ben Exp $
 
 Information about PuTTY for the Mac OS
 -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -12,7 +12,8 @@ Known bugs:
    have an easy way to test it.
  * Display is far too slow.
  * Fails to work on systems without Color QuickDraw.
- * Real bold doesn't compensate for changing character widths.
+ * Real bold doesn't compensate for changing character widths without Color
+   QuickDraw.
  * ResEdit 'TMPL' resource seems to be broken.
 
 Features we need (and aren't entirely obvious):
