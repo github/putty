@@ -10,6 +10,8 @@
 #ifdef macintosh
 #include <MacTypes.h>
 #include <Palettes.h>
+#include <Controls.h>
+#include <Windows.h>
 typedef UInt32 DWORD;
 struct mac_session;
 #endif /* macintosh */
@@ -70,25 +72,11 @@ typedef HDC Context;
 #define GLOBAL extern
 #endif
 
-GLOBAL unsigned long attr_mask;
-
-GLOBAL int rows, cols, savelines;
-
-GLOBAL int font_width, font_height;
-
 #define INBUF_SIZE 2048
 #define INBUF_MASK (INBUF_SIZE-1)
-GLOBAL unsigned char inbuf[INBUF_SIZE];
-GLOBAL int inbuf_head, inbuf_reap;
 
 #define OUTBUF_SIZE 2048
 #define OUTBUF_MASK (OUTBUF_SIZE-1)
-GLOBAL unsigned char outbuf[OUTBUF_SIZE];
-GLOBAL int outbuf_head, outbuf_reap;
-
-GLOBAL int has_focus;
-
-GLOBAL int app_cursor_keys, app_keypad_keys;
 
 #define WM_NETEVENT  (WM_USER + 1)
 
@@ -109,20 +97,20 @@ typedef enum {
     VT_XWINDOWS, VT_OEMANSI, VT_OEMONLY, VT_POORMAN
 } VT_Mode;
 
+typedef struct Session Session;
+
 typedef struct {
 #ifdef macintosh
-	char *(*init) (char *host, int port, char **realhost);
-	int (*msg)(void);
+	char *(*init) (Session *, char *host, int port, char **realhost);
+	int (*msg)(Session *);
 #else /* not macintosh */
     char *(*init) (HWND hwnd, char *host, int port, char **realhost);
     int (*msg) (WPARAM wParam, LPARAM lParam);
 #endif /* not macintosh */
-    void (*send) (char *buf, int len);
-    void (*size) (void);
-    void (*special) (Telnet_Special code);
+    void (*send) (Session *, char *buf, int len);
+    void (*size) (Session *);
+    void (*special) (Session *, Telnet_Special code);
 } Backend;
-
-GLOBAL Backend *back;
 
 typedef struct {
     /* Basic options */
@@ -172,9 +160,79 @@ typedef struct {
     short wordness[256];
 } Config;
 
-GLOBAL Config cfg;
-
 typedef struct {
+    /* Display buffers and pointers within them */
+    unsigned long *text;	       /* buffer of text on terminal screen */
+    unsigned long *scrtop;	       /* top of working screen */
+    unsigned long *disptop;	       /* top of displayed screen */
+    unsigned long *sbtop;	       /* top of scrollback */
+    unsigned long *cpos;	       /* cursor position (convenience) */
+    unsigned long *disptext;	       /* buffer of text on real screen */
+    unsigned long *wanttext;	       /* buffer of text we want on screen */
+    unsigned long *alttext;	       /* buffer of text on alt. screen */
+    unsigned char *selspace;	       /* buffer for building selections in */
+
+    /* Current state */
+    unsigned long curr_attr;
+    int curs_x, curs_y;	       /* cursor */
+    int cset;		       /* 0 or 1: which char set is in GL */
+    unsigned long cset_attr[2]; /* G0 and G1 char sets */
+
+    /* Saved state */
+    unsigned long  save_attr;
+    int save_x, save_y;	       /* saved cursor position */
+    int save_cset, save_csattr;     /* saved with cursor position */
+
+    int marg_t, marg_b;	       /* scroll margins */
+
+    /* Flags */
+    int dec_om;		       /* DEC origin mode flag */
+    int wrap, wrapnext;	       /* wrap flags */
+    int insert;		       /* insert-mode flag */
+    int rvideo;		       /* global reverse video flag */
+
+    /*
+     * Saved settings on the alternate screen.
+     */
+    int alt_x, alt_y, alt_om, alt_wrap, alt_wnext, alt_ins, alt_cset;
+    int alt_t, alt_b;
+    int alt_which;
+
+    /* Escape sequence handler state */
+#define ARGS_MAX 32		       /* max # of esc sequence arguments */
+    int esc_args[ARGS_MAX];
+    int esc_nargs;
+    int esc_query;
+#define OSC_STR_MAX 2048
+    int osc_strlen;
+    char osc_string[OSC_STR_MAX+1];
+    int osc_w;
+
+    unsigned char *tabs;
+    int nl_count;
+
+    enum {
+	TOPLEVEL, IGNORE_NEXT,
+	SEEN_ESC, SEEN_CSI, SET_GL, SET_GR,
+	SEEN_OSC, SEEN_OSC_P, SEEN_OSC_W, OSC_STRING, OSC_MAYBE_ST,
+	SEEN_ESCHASH
+    } termstate;
+
+    enum {
+	NO_SELECTION, ABOUT_TO, DRAGGING, SELECTED
+    } selstate;
+    enum {
+	SM_CHAR, SM_WORD, SM_LINE
+    } selmode;
+    unsigned long *selstart, *selend, *selanchor;
+    short wordness[256];
+} Term_State;
+
+typedef struct Session {
+    /* Config that created this session */
+    Config cfg;
+    /* Terminal emulator internal state */
+    Term_State ts;
     /* Display state */
     int rows, cols, savelines;
     int font_width, font_height;
@@ -188,32 +246,40 @@ typedef struct {
     int app_cursor_keys, app_keypad_keys;
     /* Backend */
     Backend *back;
-    /* Config that created this session */
-    Config cfg;
+    /* Conveniences */
+    unsigned long attr_mask;		/* Mask of attributes to display */
+#ifdef macintosh
+    short		fontnum;
+    int			font_ascent;
+    int			font_leading;
+    WindowPtr		window;
+    PaletteHandle	palette;
+    ControlHandle	scrollbar;
+    WCTabHandle		wctab;
+#endif
 } Session;
 
 
 /*
- * Exports from window.c.
+ * Exports from display system
  */
-void request_resize (int, int);
-void do_text (Context, int, int, char *, int, unsigned long);
-void set_title (char *);
-void set_icon (char *);
-void set_sbar (int, int, int);
-Context get_ctx();
-void free_ctx (Context);
-void palette_set (int, int, int, int);
-void palette_reset (void);
+extern void request_resize(Session *, int, int);
+extern void do_text(Session *, int, int, char *, int, unsigned long);
+extern void set_title(Session *, char *);
+extern void set_icon(Session *, char *);
+extern void set_sbar(Session *, int, int, int);
+extern void pre_paint(Session *);
+extern void post_paint(Session *);
+extern void palette_set(Session *, int, int, int, int);
+extern void palette_reset(Session *);
 void write_clip (void *, int);
 void get_clip (void **, int *);
-void optimised_move (int, int, int);
-void do_scroll(int, int, int);
+extern void do_scroll(Session *, int, int, int);
 void fatalbox (const char *, ...);
 #ifdef macintosh
 #pragma noreturn (fatalbox)
 #endif
-void beep (void);
+extern void beep (Session *s);
 #define OPTIMISE_IS_SCROLL 1
 
 /*
@@ -241,20 +307,20 @@ void verify_ssh_host_key(char *host, struct RSAKey *key);
  * Exports from terminal.c.
  */
 
-void term_init (void);
-void term_size (int, int, int);
-void term_out (void);
-void term_paint (Context, int, int, int, int);
-void term_scroll (int, int);
-void term_pwron (void);
-void term_clrsb (void);
-void term_mouse (Mouse_Button, Mouse_Action, int, int);
-void term_copy(void);
-void term_paste(void);
-int term_hasselection(void);
-void term_deselect (void);
-void term_update (void);
-void term_invalidate(void);
+extern void term_init(Session *);
+extern void term_size(Session *, int, int, int);
+extern void term_out(Session *);
+extern void term_paint(Session *, int, int, int, int);
+extern void term_scroll(Session *, int, int);
+extern void term_pwron(Session *);
+extern void term_clrsb(Session *);
+extern void term_mouse(Session *, Mouse_Button, Mouse_Action, int, int);
+extern void term_copy(Session *);
+extern void term_paste(Session *);
+extern int term_hasselection(Session *);
+extern void term_deselect (Session *);
+extern void term_update (Session *);
+extern void term_invalidate(Session *);
 
 /*
  * Exports from telnet.c.

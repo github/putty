@@ -1,4 +1,4 @@
-/* $Id: mac.c,v 1.1.2.19 1999/03/28 02:06:10 ben Exp $ */
+/* $Id: mac.c,v 1.1.2.20 1999/03/29 19:50:22 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -299,9 +299,9 @@ static void mac_keypress(EventRecord *event) {
      * Check for a command-key combination, but ignore it if it counts
      * as a meta-key combination and we're in a terminal window.
      */
-    if (event->what == keyDown && (event->modifiers & cmdKey) &&
+    if (event->what == keyDown && (event->modifiers & cmdKey) /*&&
 	!((event->modifiers & cfg.meta_modifiers) == cfg.meta_modifiers &&
-	    mac_windowtype(window) == wTerminal)) {
+	    mac_windowtype(window) == wTerminal)*/) {
 	mac_adjustmenus();
 	mac_menucommand(MenuKey(event->message & charCodeMask));
     } else {

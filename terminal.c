@@ -7,100 +7,106 @@
 #include <string.h>
 #include "putty.h"
 
-static unsigned long *text;	       /* buffer of text on terminal screen */
-static unsigned long *scrtop;	       /* top of working screen */
-static unsigned long *disptop;	       /* top of displayed screen */
-static unsigned long *sbtop;	       /* top of scrollback */
-static unsigned long *cpos;	       /* cursor position (convenience) */
-static unsigned long *disptext;	       /* buffer of text on real screen */
-static unsigned long *wanttext;	       /* buffer of text we want on screen */
-static unsigned long *alttext;	       /* buffer of text on alt. screen */
+#define cfg		(s->cfg)
+#define back		(s->back)
+#define rows		(s->rows)
+#define cols		(s->cols)
+#define savelines	(s->savelines)
+#define font_width	(s->font_width)
+#define font_height	(s->font_height)
+#define has_focus	(s->has_focus)
+#define inbuf		(s->inbuf)
+#define inbuf_head	(s->inbuf_head)
+#define inbuf_reap	(s->inbuf_reap)
+#define app_cursor_keys	(s->app_cursor_keys)
+#define app_keypad_keys	(s->app_keypad_keys)
+#define attr_mask	(s->attr_mask)
 
-static unsigned char *selspace;	       /* buffer for building selections in */
+#define text		s->ts.text
+#define scrtop		s->ts.scrtop
+#define disptop		s->ts.disptop
+#define sbtop		s->ts.sbtop
+#define cpos		s->ts.cpos
+#define disptext	s->ts.disptext
+#define wanttext	s->ts.wanttext
+#define alttext		s->ts.alttext
+
+#define selspace	s->ts.selspace
 
 #define TSIZE (sizeof(*text))
 #define fix_cpos  do { cpos = scrtop + curs_y * (cols+1) + curs_x; } while(0)
 
-static unsigned long curr_attr, save_attr;
+#define curr_attr	s->ts.curr_attr
+#define save_attr	s->ts.save_attr
 
-static int curs_x, curs_y;	       /* cursor */
-static int save_x, save_y;	       /* saved cursor position */
-static int marg_t, marg_b;	       /* scroll margins */
-static int dec_om;		       /* DEC origin mode flag */
-static int wrap, wrapnext;	       /* wrap flags */
-static int insert;		       /* insert-mode flag */
-static int cset;		       /* 0 or 1: which char set */
-static int save_cset, save_csattr;     /* saved with cursor position */
-static int rvideo;		       /* global reverse video flag */
+#define curs_x		s->ts.curs_x
+#define curs_y		s->ts.curs_y
+#define save_x		s->ts.save_x
+#define save_y		s->ts.save_y
+#define marg_t		s->ts.marg_t
+#define marg_b		s->ts.marg_b
+#define curr_dec_om    	s->ts.dec_om
+#define wrap		s->ts.wrap
+#define wrapnext	s->ts.wrapnext
+#define insert		s->ts.insert
+#define cset		s->ts.cset
+#define save_cset	s->ts.save_cset
+#define save_csattr	s->ts.save_csattr
+#define rvideo		s->ts.rvideo
+#define cset_attr	s->ts.cset_attr
 
-static unsigned long cset_attr[2];
+#define alt_x		s->ts.alt_x
+#define alt_y		s->ts.alt_y
+#define alt_om		s->ts.alt_om
+#define alt_wrap	s->ts.alt_wrap
+#define alt_wnext	s->ts.alt_wnext
+#define alt_ins		s->ts.alt_ins
+#define alt_cset	s->ts.alt_cset
+#define alt_t		s->ts.alt_t
+#define alt_b		s->ts.alt_b
+#define alt_which	s->ts.alt_which
 
-/*
- * Saved settings on the alternate screen.
- */
-static int alt_x, alt_y, alt_om, alt_wrap, alt_wnext, alt_ins, alt_cset;
-static int alt_t, alt_b;
-static int alt_which;
-
-#define ARGS_MAX 32		       /* max # of esc sequence arguments */
 #define ARG_DEFAULT -1		       /* if an arg isn't specified */
 #define def(a,d) ( (a) == ARG_DEFAULT ? (d) : (a) )
-static int esc_args[ARGS_MAX];
-static int esc_nargs;
-static int esc_query;
 
-#define OSC_STR_MAX 2048
-static int osc_strlen;
-static char osc_string[OSC_STR_MAX+1];
-static int osc_w;
+#define esc_args	s->ts.esc_args
+#define esc_nargs	s->ts.esc_nargs
+#define esc_query	s->ts.esc_query
 
-static unsigned char *tabs;
+#define osc_strlen	s->ts.osc_strlen
+#define osc_string	s->ts.osc_string
+#define osc_w		s->ts.osc_w
+
+#define tabs		s->ts.tabs
 
 #define MAXNL 5
-static int nl_count;
+#define nl_count	s->ts.nl_count
 
-static enum {
-    TOPLEVEL, IGNORE_NEXT,
-    SEEN_ESC, SEEN_CSI, SET_GL, SET_GR,
-    SEEN_OSC, SEEN_OSC_P, SEEN_OSC_W, OSC_STRING, OSC_MAYBE_ST,
-    SEEN_ESCHASH
-} termstate;
+#define termstate	(s->ts.termstate)
+#define selstate	(s->ts.selstate)
+#define selmode		(s->ts.selmode)
+#define selstart	(s->ts.selstart)
+#define selend		(s->ts.selend)
+#define selanchor	(s->ts.selanchor)
 
-static enum {
-    NO_SELECTION, ABOUT_TO, DRAGGING, SELECTED
-} selstate;
-static enum {
-    SM_CHAR, SM_WORD, SM_LINE
-} selmode;
-static unsigned long *selstart, *selend, *selanchor;
-
-static short wordness[256] = {
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 01 */
-    0,1,2,1,1,1,1,1,1,1,1,1,1,2,2,2, 2,2,2,2,2,2,2,2,2,2,1,1,1,1,1,1, /* 23 */
-    1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2, 2,2,2,2,2,2,2,2,2,2,2,1,1,1,1,2, /* 45 */
-    1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2, 2,2,2,2,2,2,2,2,2,2,2,1,1,1,1,1, /* 67 */
-    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, /* 89 */
-    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, /* AB */
-    2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2, 2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2, /* CD */
-    2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2, 2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2, /* EF */
-};
+#define curr_wordness	s->ts.wordness
 
 static unsigned char sel_nl[] = SEL_NL;
 
 /*
  * Internal prototypes.
  */
-static void do_paint (Context, int);
-static void erase_lots (int, int, int);
-static void swap_screen (int);
-static void update_sbar (void);
-static void deselect (void);
-static void scroll_display(int, int, int);
+static void do_paint (Session *, int);
+static void erase_lots (Session *, int, int, int);
+static void swap_screen (Session *, int);
+static void update_sbar (Session *);
+static void deselect (Session *);
+static void scroll_display(Session *, int, int, int);
 
 /*
  * Set up power-on settings for the terminal.
  */
-static void power_on(void) {
+static void power_on(Session *s) {
     curs_x = curs_y = alt_x = alt_y = save_x = save_y = 0;
     alt_t = marg_t = 0;
     if (rows != -1)
@@ -112,7 +118,7 @@ static void power_on(void) {
 	for (i = 0; i < cols; i++)
 	    tabs[i] = (i % 8 == 0 ? TRUE : FALSE);
     }
-    alt_om = dec_om = cfg.dec_om;
+    alt_om = curr_dec_om = cfg.dec_om;
     alt_wnext = wrapnext = alt_ins = insert = FALSE;
     alt_wrap = wrap = cfg.wrap_mode;
     alt_cset = cset = 0;
@@ -125,66 +131,64 @@ static void power_on(void) {
     {
 	int i;
 	for (i = 0; i < 256; i++)
-	    wordness[i] = cfg.wordness[i];
+	    curr_wordness[i] = cfg.wordness[i];
     }
     if (text) {
-	swap_screen (1);
-	erase_lots (FALSE, TRUE, TRUE);
-	swap_screen (0);
-	erase_lots (FALSE, TRUE, TRUE);
+	swap_screen (s, 1);
+	erase_lots (s, FALSE, TRUE, TRUE);
+	swap_screen (s, 0);
+	erase_lots (s, FALSE, TRUE, TRUE);
     }
 }
 
 /*
  * Force a screen update.
  */
-void term_update(void) {
-    Context ctx;
-    ctx = get_ctx();
-    if (ctx) {
-	do_paint (ctx, TRUE);
-	free_ctx (ctx);
-	nl_count = 0;
-    }
+void term_update(Session *s) {
+
+    pre_paint(s);
+    do_paint(s, TRUE);
+    post_paint(s);
+    nl_count = 0;
 }
 
 /*
  * Same as power_on(), but an external function.
  */
-void term_pwron(void) {
-    power_on();
+void term_pwron(Session *s) {
+    power_on(s);
     fix_cpos;
     disptop = scrtop;
-    deselect();
-    term_update();
+    deselect(s);
+    term_update(s);
 }
 
 /*
  * Clear the scrollback.
  */
-void term_clrsb(void) {
+void term_clrsb(Session *s) {
     disptop = sbtop = scrtop;
-    update_sbar();
+    update_sbar(s);
 }
 
 /*
  * Initialise the terminal.
  */
-void term_init(void) {
+void term_init(Session *s) {
     text = sbtop = scrtop = disptop = cpos = NULL;
     disptext = wanttext = NULL;
     tabs = NULL;
     selspace = NULL;
-    deselect();
+    deselect(s);
     rows = cols = -1;
     nl_count = 0;
-    power_on();
+    power_on(s);
 }
 
 /*
  * Set up the terminal for a given size.
  */
-void term_size(int newrows, int newcols, int newsavelines) {
+void term_size(Session *s, int newrows, int newcols, int newsavelines) {
     unsigned long *newtext, *newdisp, *newwant, *newalt;
     int i, j, crows, ccols;
 
@@ -264,15 +268,15 @@ void term_size(int newrows, int newcols, int newsavelines) {
     savelines = newsavelines;
     fix_cpos;
 
-    deselect();
-    update_sbar();
-    term_update();
+    deselect(s);
+    update_sbar(s);
+    term_update(s);
 }
 
 /*
  * Swap screens.
  */
-static void swap_screen (int which) {
+static void swap_screen (Session *s, int which) {
     int t;
     unsigned long tt;
 
@@ -289,7 +293,7 @@ static void swap_screen (int which) {
     t = curs_y; curs_y = alt_y; alt_y = t;
     t = marg_t; marg_t = alt_t; alt_t = t;
     t = marg_b; marg_b = alt_b; alt_b = t;
-    t = dec_om; dec_om = alt_om; alt_om = t;
+    t = curr_dec_om; curr_dec_om = alt_om; alt_om = t;
     t = wrap; wrap = alt_wrap; alt_wrap = t;
     t = wrapnext; wrapnext = alt_wnext; alt_wnext = t;
     t = insert; insert = alt_ins; alt_ins = t;
@@ -301,7 +305,7 @@ static void swap_screen (int which) {
 /*
  * Retrieve a character from `inbuf'.
  */
-static int inbuf_getc(void) {
+static int inbuf_getc(Session *s) {
     if (inbuf_head == inbuf_reap)
 	return -1;		       /* EOF */
     else {
@@ -314,22 +318,23 @@ static int inbuf_getc(void) {
 /*
  * Update the scroll bar.
  */
-static void update_sbar(void) {
+static void update_sbar(Session *s) {
     int min;
 
     min = (sbtop - text) / (cols+1);
-    set_sbar ((scrtop - text) / (cols+1) + rows - min,
-	      (disptop - text) / (cols+1) - min,
-	      rows);
+    set_sbar(s, (scrtop - text) / (cols+1) + rows - min,
+	     (disptop - text) / (cols+1) - min,
+	     rows);
 }
 
 /*
  * Check whether the region bounded by the two pointers intersects
  * the selection, and de-select the on-screen selection if so.
  */
-static void check_selection (unsigned long *from, unsigned long *to) {
+static void check_selection(Session *s,
+			    unsigned long *from, unsigned long *to) {
     if (from < selend && selstart < to)
-	deselect();
+	deselect(s);
 }
 
 /*
@@ -337,7 +342,7 @@ static void check_selection (unsigned long *from, unsigned long *to) {
  * for backward.) `sb' is TRUE if the scrolling is permitted to
  * affect the scrollback buffer.
  */
-static void scroll (int topline, int botline, int lines, int sb) {
+static void scroll (Session *s, int topline, int botline, int lines, int sb) {
     unsigned long *scroll_top;
     int scroll_size, size, i;
 
@@ -355,7 +360,7 @@ static void scroll (int topline, int botline, int lines, int sb) {
 	    sbtop = text;
 	scroll_size += scroll_top - sbtop;
 	scroll_top = sbtop;
-	update_sbar();
+	update_sbar(s);
     }
 
     if (scroll_size < 0) {
@@ -399,12 +404,12 @@ static void scroll (int topline, int botline, int lines, int sb) {
 	}
     }
 #ifdef OPTIMISE_SCROLL
-    scroll_display(topline, botline, lines);
+    scroll_display(s, topline, botline, lines);
 #endif
 }
 
 #ifdef OPTIMISE_SCROLL
-static void scroll_display(int topline, int botline, int lines) {
+static void scroll_display(Session *s, int topline, int botline, int lines) {
     unsigned long *start, *end;
     int distance, size, i;
 
@@ -421,7 +426,7 @@ static void scroll_display(int topline, int botline, int lines) {
 	for (i = 0; i < distance; i++)
 	    start[i] |= ATTR_INVALID;
     }
-    do_scroll(topline, botline, lines);
+    do_scroll(s, topline, botline, lines);
 }
 #endif /* OPTIMISE_SCROLL */
     
@@ -432,7 +437,7 @@ static void scroll_display(int topline, int botline, int lines) {
  * not to, 1 to disallow _passing_ the margins, and 2 to disallow
  * even _being_ outside the margins.
  */
-static void move (int x, int y, int marg_clip) {
+static void move (Session *s, int x, int y, int marg_clip) {
     if (x < 0)
 	x = 0;
     if (x >= cols)
@@ -456,7 +461,7 @@ static void move (int x, int y, int marg_clip) {
 /*
  * Save or restore the cursor and SGR mode.
  */
-static void save_cursor(int save) {
+static void save_cursor(Session *s, int save) {
     if (save) {
 	save_x = curs_x;
 	save_y = curs_y;
@@ -477,7 +482,7 @@ static void save_cursor(int save) {
  * Erase a large portion of the screen: the whole screen, or the
  * whole line, or parts thereof.
  */
-static void erase_lots (int line_only, int from_begin, int to_end) {
+static void erase_lots(Session *s, int line_only, int from_begin, int to_end) {
     unsigned long *startpos, *endpos;
 
     if (line_only) {
@@ -491,7 +496,7 @@ static void erase_lots (int line_only, int from_begin, int to_end) {
 	startpos = cpos;
     if (!to_end)
 	endpos = cpos;
-    check_selection (startpos, endpos);
+    check_selection(s, startpos, endpos);
     while (startpos < endpos)
 	*startpos++ = ERASE_CHAR;
 }
@@ -500,7 +505,7 @@ static void erase_lots (int line_only, int from_begin, int to_end) {
  * Insert or delete characters within the current line. n is +ve if
  * insertion is desired, and -ve for deletion.
  */
-static void insch (int n) {
+static void insch(Session *s, int n) {
     int dir = (n < 0 ? -1 : +1);
     int m;
 
@@ -508,7 +513,7 @@ static void insch (int n) {
     if (n > cols - curs_x)
 	n = cols - curs_x;
     m = cols - curs_x - n;
-    check_selection (cpos, cpos+n);
+    check_selection(s, cpos, cpos+n);
     if (dir < 0) {
 	memmove (cpos, cpos+n, m*TSIZE);
 	while (n--)
@@ -524,28 +529,28 @@ static void insch (int n) {
  * Toggle terminal mode `mode' to state `state'. (`query' indicates
  * whether the mode is a DEC private one or a normal one.)
  */
-static void toggle_mode (int mode, int query, int state) {
+static void toggle_mode(Session *s, int mode, int query, int state) {
     if (query) switch (mode) {
       case 1:			       /* application cursor keys */
 	app_cursor_keys = state;
 	break;
       case 3:			       /* 80/132 columns */
-	deselect();
-	request_resize (state ? 132 : 80, rows);
+	deselect(s);
+	request_resize(s, state ? 132 : 80, rows);
 	break;
       case 5:			       /* reverse video */
 	rvideo = state;
 	disptop = scrtop;
 	break;
       case 6:			       /* DEC origin mode */
-	dec_om = state;
+	curr_dec_om = state;
 	break;
       case 7:			       /* auto wrap */
 	wrap = state;
 	break;
       case 47:			       /* alternate screen */
-	deselect();
-	swap_screen (state);
+	deselect(s);
+	swap_screen(s, state);
 	disptop = scrtop;
 	break;
     } else switch (mode) {
@@ -558,22 +563,22 @@ static void toggle_mode (int mode, int query, int state) {
 /*
  * Process an OSC sequence: set window title or icon name.
  */
-static void do_osc(void) {
+static void do_osc(Session *s) {
     if (osc_w) {
 	while (osc_strlen--)
-	    wordness[(unsigned char)osc_string[osc_strlen]] = esc_args[0];
+	    curr_wordness[(unsigned char)osc_string[osc_strlen]] = esc_args[0];
     } else {
 	osc_string[osc_strlen] = '\0';
 	switch (esc_args[0]) {
 	  case 0:
 	  case 1:
-	    set_icon (osc_string);
+	    set_icon (s, osc_string);
 	    if (esc_args[0] == 1)
 		break;
 	    /* fall through: parameter 0 means set both */
 	  case 2:
 	  case 21:
-	    set_title (osc_string);
+	    set_title(s, osc_string);
 	    break;
 	}
     }
@@ -584,11 +589,11 @@ static void do_osc(void) {
  * in-memory display. There's a big state machine in here to
  * process escape sequences...
  */
-void term_out(void) {
+void term_out(Session *s) {
     int c;
     int must_update = FALSE;
 
-    while ( (c = inbuf_getc()) != -1) {
+    while ( (c = inbuf_getc(s)) != -1) {
 #ifdef LOG
 	{
 	    static FILE *fp = NULL;
@@ -601,10 +606,10 @@ void term_out(void) {
 	    do_toplevel:
 	    switch (c) {
 	      case '\005':	       /* terminal type query */
-		back->send ("\033[?1;2c", 7);
+		back->send(s, "\033[?1;2c", 7);
 		break;
 	      case '\007':
-		beep();
+		beep(s);
 		disptop = scrtop;
 		must_update = TRUE;
 		break;
@@ -649,7 +654,7 @@ void term_out(void) {
 	      case '\014':
 	      case '\012':
 		if (curs_y == marg_b)
-		    scroll (marg_t, marg_b, 1, TRUE);
+		    scroll(s, marg_t, marg_b, 1, TRUE);
 		else if (curs_y < rows-1)
 		    curs_y++;
                 if (cfg.lfhascr)
@@ -668,7 +673,7 @@ void term_out(void) {
 		{
 		    unsigned long *old_cpos = cpos;
 		    fix_cpos;
-		    check_selection (old_cpos, cpos);
+		    check_selection(s, old_cpos, cpos);
 		}
 		disptop = scrtop;
 		must_update = TRUE;
@@ -678,7 +683,7 @@ void term_out(void) {
 		    if (wrapnext) {
 			cpos[1] = ATTR_WRAPPED;
 			if (curs_y == marg_b)
-			    scroll (marg_t, marg_b, 1, TRUE);
+			    scroll(s, marg_t, marg_b, 1, TRUE);
 			else if (curs_y < rows-1)
 			    curs_y++;
 			curs_x = 0;
@@ -687,8 +692,8 @@ void term_out(void) {
 			nl_count++;
 		    }
 		    if (insert)
-			insch (1);
-		    check_selection (cpos, cpos+1);
+			insch(s, 1);
+		    check_selection(s, cpos, cpos+1);
 		    *cpos++ = c | curr_attr | 
 			(c <= 0x7F ? cset_attr[cset] : ATTR_ASCII);
 		    curs_x++;
@@ -711,7 +716,7 @@ void term_out(void) {
 	     * and _if_ we see a backslash, we process it.
 	     */
 	    if (c == '\\') {
-		do_osc();
+		do_osc(s);
 		termstate = TOPLEVEL;
 		break;
 	    }
@@ -744,10 +749,10 @@ void term_out(void) {
 		termstate = SET_GR;
 		break;
 	      case '7':		       /* save cursor */
-		save_cursor (TRUE);
+		save_cursor(s, TRUE);
 		break;
 	      case '8':		       /* restore cursor */
-		save_cursor (FALSE);
+		save_cursor(s, FALSE);
 		disptop = scrtop;
 		must_update = TRUE;
 		break;
@@ -759,7 +764,7 @@ void term_out(void) {
 		break;
 	      case 'D':		       /* exactly equivalent to LF */
 		if (curs_y == marg_b)
-		    scroll (marg_t, marg_b, 1, TRUE);
+		    scroll(s, marg_t, marg_b, 1, TRUE);
 		else if (curs_y < rows-1)
 		    curs_y++;
 		fix_cpos;
@@ -771,7 +776,7 @@ void term_out(void) {
 		curs_x = 0;
 		wrapnext = FALSE;
 		if (curs_y == marg_b)
-		    scroll (marg_t, marg_b, 1, TRUE);
+		    scroll(s, marg_t, marg_b, 1, TRUE);
 		else if (curs_y < rows-1)
 		    curs_y++;
 		fix_cpos;
@@ -781,7 +786,7 @@ void term_out(void) {
 		break;
 	      case 'M':		       /* reverse index - backwards LF */
 		if (curs_y == marg_t)
-		    scroll (marg_t, marg_b, -1, TRUE);
+		    scroll(s, marg_t, marg_b, -1, TRUE);
 		else if (curs_y > 0)
 		    curs_y--;
 		fix_cpos;
@@ -790,10 +795,10 @@ void term_out(void) {
 		must_update = TRUE;
 		break;
 	      case 'Z':		       /* terminal type query */
-		back->send ("\033[?6c", 5);
+		back->send(s, "\033[?6c", 5);
 		break;
 	      case 'c':		       /* restore power-on settings */
-		power_on();
+		power_on(s);
 		fix_cpos;
 		disptop = scrtop;
 		must_update = TRUE;
@@ -834,52 +839,52 @@ void term_out(void) {
 		termstate = SEEN_CSI;
 		break;
 	      case 'A':		       /* move up N lines */
-		move (curs_x, curs_y - def(esc_args[0], 1), 1);
+		move(s, curs_x, curs_y - def(esc_args[0], 1), 1);
 		disptop = scrtop;
 		must_update = TRUE;
 		break;
 	      case 'B': case 'e':      /* move down N lines */
-		move (curs_x, curs_y + def(esc_args[0], 1), 1);
+		move(s, curs_x, curs_y + def(esc_args[0], 1), 1);
 		disptop = scrtop;
 		must_update = TRUE;
 		break;
 	      case 'C': case 'a':      /* move right N cols */
-		move (curs_x + def(esc_args[0], 1), curs_y, 1);
+		move(s, curs_x + def(esc_args[0], 1), curs_y, 1);
 		disptop = scrtop;
 		must_update = TRUE;
 		break;
 	      case 'D':		       /* move left N cols */
-		move (curs_x - def(esc_args[0], 1), curs_y, 1);
+		move(s, curs_x - def(esc_args[0], 1), curs_y, 1);
 		disptop = scrtop;
 		must_update = TRUE;
 		break;
 	      case 'E':		       /* move down N lines and CR */
-		move (0, curs_y + def(esc_args[0], 1), 1);
+		move(s, 0, curs_y + def(esc_args[0], 1), 1);
 		disptop = scrtop;
 		must_update = TRUE;
 		break;
 	      case 'F':		       /* move up N lines and CR */
-		move (0, curs_y - def(esc_args[0], 1), 1);
+		move(s, 0, curs_y - def(esc_args[0], 1), 1);
 		disptop = scrtop;
 		must_update = TRUE;
 		break;
 	      case 'G': case '`':      /* set horizontal posn */
-		move (def(esc_args[0], 1) - 1, curs_y, 0);
+		move(s, def(esc_args[0], 1) - 1, curs_y, 0);
 		disptop = scrtop;
 		must_update = TRUE;
 		break;
 	      case 'd':		       /* set vertical posn */
-		move (curs_x, (dec_om ? marg_t : 0) + def(esc_args[0], 1) - 1,
-		      (dec_om ? 2 : 0));
+		move(s, curs_x, (curr_dec_om ? marg_t : 0) + def(esc_args[0], 1) - 1,
+		      (curr_dec_om ? 2 : 0));
 		disptop = scrtop;
 		must_update = TRUE;
 		break;
 	      case 'H': case 'f':      /* set horz and vert posns at once */
 		if (esc_nargs < 2)
 		    esc_args[1] = ARG_DEFAULT;
-		move (def(esc_args[1], 1) - 1,
-		      (dec_om ? marg_t : 0) + def(esc_args[0], 1) - 1,
-		      (dec_om ? 2 : 0));
+		move(s, def(esc_args[1], 1) - 1,
+		     (curr_dec_om ? marg_t : 0) + def(esc_args[0], 1) - 1,
+		     (curr_dec_om ? 2 : 0));
 		disptop = scrtop;
 		must_update = TRUE;
 		break;
@@ -888,7 +893,7 @@ void term_out(void) {
 		    unsigned int i = def(esc_args[0], 0) + 1;
 		    if (i > 3)
 			i = 0;
-		    erase_lots(FALSE, !!(i & 2), !!(i & 1));
+		    erase_lots(s, FALSE, !!(i & 2), !!(i & 1));
 		}
 		disptop = scrtop;
 		must_update = TRUE;
@@ -898,48 +903,48 @@ void term_out(void) {
 		    unsigned int i = def(esc_args[0], 0) + 1;
 		    if (i > 3)
 			i = 0;
-		    erase_lots(TRUE, !!(i & 2), !!(i & 1));
+		    erase_lots(s, TRUE, !!(i & 2), !!(i & 1));
 		}
 		disptop = scrtop;
 		must_update = TRUE;
 		break;
 	      case 'L':		       /* insert lines */
 		if (curs_y <= marg_b)
-		    scroll (curs_y, marg_b, -def(esc_args[0], 1), FALSE);
+		    scroll(s, curs_y, marg_b, -def(esc_args[0], 1), FALSE);
 		disptop = scrtop;
 		must_update = TRUE;
 		break;
 	      case 'M':		       /* delete lines */
 		if (curs_y <= marg_b)
-		    scroll (curs_y, marg_b, def(esc_args[0], 1), FALSE);
+		    scroll(s, curs_y, marg_b, def(esc_args[0], 1), FALSE);
 		disptop = scrtop;
 		must_update = TRUE;
 		break;
 	      case '@':		       /* insert chars */
-		insch (def(esc_args[0], 1));
+		insch(s, def(esc_args[0], 1));
 		disptop = scrtop;
 		must_update = TRUE;
 		break;
 	      case 'P':		       /* delete chars */
-		insch (-def(esc_args[0], 1));
+		insch(s, -def(esc_args[0], 1));
 		disptop = scrtop;
 		must_update = TRUE;
 		break;
 	      case 'c':		       /* terminal type query */
-		back->send ("\033[?6c", 5);
+		back->send(s, "\033[?6c", 5);
 		break;
 	      case 'n':		       /* cursor position query */
 		if (esc_args[0] == 6) {
 		    char buf[32];
 		    sprintf (buf, "\033[%d;%dR", curs_y + 1, curs_x + 1);
-		    back->send (buf, strlen(buf));
+		    back->send(s, buf, strlen(buf));
 		}
 		break;
 	      case 'h':		       /* toggle a mode to high */
-		toggle_mode (esc_args[0], esc_query, TRUE);
+		toggle_mode(s, esc_args[0], esc_query, TRUE);
 		break;
 	      case 'l':		       /* toggle a mode to low */
-		toggle_mode (esc_args[0], esc_query, FALSE);
+		toggle_mode(s, esc_args[0], esc_query, FALSE);
 		break;
 	      case 'g':		       /* clear tabs */
 		if (esc_nargs == 1) {
@@ -1024,16 +1029,16 @@ void term_out(void) {
 		}
 		break;
 	      case 's':		       /* save cursor */
-		save_cursor (TRUE);
+		save_cursor(s, TRUE);
 		break;
 	      case 'u':		       /* restore cursor */
-		save_cursor (FALSE);
+		save_cursor(s, FALSE);
 		disptop = scrtop;
 		must_update = TRUE;
 		break;
 	      case 't':		       /* set page size - ie window height */
-		request_resize (cols, def(esc_args[0], 24));
-		deselect();
+		request_resize(s, cols, def(esc_args[0], 24));
+		deselect(s);
 		break;
 	      case 'X':		       /* write N spaces w/o moving cursor */
 		{
@@ -1041,7 +1046,7 @@ void term_out(void) {
 		    unsigned long *p = cpos;
 		    if (n > cols - curs_x)
 			n = cols - curs_x;
-		    check_selection (cpos, cpos+n);
+		    check_selection(s, cpos, cpos+n);
 		    while (n--)
 			*p++ = ERASE_CHAR;
 		    disptop = scrtop;
@@ -1055,7 +1060,7 @@ void term_out(void) {
 		    if (i == 0 || i == 1) {
 			strcpy (buf, "\033[2;1;1;112;112;1;0x");
 			buf[2] += i;
-			back->send (buf, 20);
+			back->send(s, buf, 20);
 		    }
 		}
 		break;
@@ -1089,8 +1094,8 @@ void term_out(void) {
 		osc_strlen = 0;
 		break;
 	      case 'R':		       /* Linux palette reset */
-		palette_reset();
-		term_invalidate();
+		palette_reset(s);
+		term_invalidate(s);
 		termstate = TOPLEVEL;
 		break;
 	      case 'W':		       /* word-set */
@@ -1125,7 +1130,7 @@ void term_out(void) {
 		 * mode unless it is followed by \, in which case it is
 		 * synonymous with ST in the first place.
 		 */
-		do_osc();
+		do_osc(s);
 		termstate = TOPLEVEL;
 	    } else if (c == '\033')
 		    termstate = OSC_MAYBE_ST;
@@ -1146,11 +1151,10 @@ void term_out(void) {
 		    termstate = TOPLEVEL;
 		osc_string[osc_strlen++] = val;
 		if (osc_strlen >= 7) {
-		    palette_set (osc_string[0],
+		    palette_set (s, osc_string[0],
 				 osc_string[1] * 16 + osc_string[2],
 				 osc_string[3] * 16 + osc_string[4],
 				 osc_string[5] * 16 + osc_string[6]);
-		    term_invalidate();
 		    termstate = TOPLEVEL;
 		}
 	    }
@@ -1179,38 +1183,25 @@ void term_out(void) {
 		    *p++ = ATTR_DEFAULT | 'E';
 		disptop = scrtop;
 		must_update = TRUE;
-		check_selection (scrtop, scrtop + rows * (cols+1));
+		check_selection(s, scrtop, scrtop + rows * (cols+1));
 	    }
 	    termstate = TOPLEVEL;
 	    break;
 	}
-	check_selection (cpos, cpos+1);
+	check_selection(s, cpos, cpos+1);
     }
 	
     if (must_update || nl_count > MAXNL) {
-	update_sbar();
-	term_update();
+	update_sbar(s);
+	term_update(s);
     }
-}
-
-/*
- * Compare two lines to determine whether they are sufficiently
- * alike to scroll-optimise one to the other. Return the degree of
- * similarity.
- */
-static int linecmp (unsigned long *a, unsigned long *b) {
-    int i, n;
-
-    for (i=n=0; i < cols; i++)
-	n += (*a++ == *b++);
-    return n;
 }
 
 /*
  * Given a context, update the window. Out of paranoia, we don't
  * allow WM_PAINT responses to do scrolling optimisations.
  */
-static void do_paint (Context ctx, int may_optimise){ 
+static void do_paint (Session *s, int may_optimise){ 
     int i, j, start, our_curs_y;
     unsigned long attr, rv, cursor;
     char ch[1024];
@@ -1247,7 +1238,7 @@ static void do_paint (Context ctx, int may_optimise){
 			      (t & attr_mask) == attr &&
 			      j-start < sizeof(ch));
 	    if (start != -1 && !keep_going) {
-		do_text (ctx, start, i, ch, j-start, attr);
+		do_text(s, start, i, ch, j-start, attr);
 		start = -1;
 	    }
 	    if (needs_update) {
@@ -1265,7 +1256,7 @@ static void do_paint (Context ctx, int may_optimise){
 /*
  * Invalidate the whole screen so it will be repainted in full.
  */
-void term_invalidate(void) {
+void term_invalidate(Session *s) {
     int i;
 
     for (i=0; i<rows*(cols+1); i++)
@@ -1275,7 +1266,7 @@ void term_invalidate(void) {
 /*
  * Paint the window in response to a WM_PAINT message.
  */
-void term_paint (Context ctx, int l, int t, int r, int b) {
+void term_paint(Session *s, int l, int t, int r, int b) {
     int i, j, left, top, right, bottom;
 
     left = l / font_width;
@@ -1286,7 +1277,7 @@ void term_paint (Context ctx, int l, int t, int r, int b) {
       for (j = left; j <= right && j < cols ; j++)
 	    disptext[i*(cols+1)+j] = ATTR_INVALID;
 
-    do_paint (ctx, FALSE);
+    do_paint (s, FALSE);
 }
 
 /*
@@ -1296,7 +1287,7 @@ void term_paint (Context ctx, int l, int t, int r, int b) {
  * to denote it is relative to the end, and 0 to denote that it is
  * relative to the current position.
  */
-void term_scroll (int rel, int where) {
+void term_scroll(Session *s, int rel, int where) {
     int n = where * (cols+1);
 #ifdef OPTIMISE_SCROLL
     unsigned long *olddisptop = disptop;
@@ -1309,19 +1300,19 @@ void term_scroll (int rel, int where) {
 	disptop = sbtop;
     if (disptop > scrtop)
 	disptop = scrtop;
-    update_sbar();
+    update_sbar(s);
 #ifdef OPTIMISE_SCROLL
     shift = (disptop - olddisptop) / (cols + 1);
     if (shift < rows && shift > -rows)
-	scroll_display(0, rows - 1, shift);
+	scroll_display(s, 0, rows - 1, shift);
 #endif /* OPTIMISE_SCROLL */
-    term_update();
+    term_update(s);
 }
 
 /*
  * Spread the selection outwards according to the selection mode.
  */
-static unsigned long *sel_spread_half (unsigned long *p, int dir) {
+static unsigned long *sel_spread_half(Session *s, unsigned long *p, int dir) {
     unsigned long *linestart, *lineend;
     int x;
     short wvalue;
@@ -1351,12 +1342,12 @@ static unsigned long *sel_spread_half (unsigned long *p, int dir) {
 	 * In this mode, the units are maximal runs of characters
 	 * whose `wordness' has the same value.
 	 */
-	wvalue = wordness[*p & CHAR_MASK];
+	wvalue = curr_wordness[*p & CHAR_MASK];
 	if (dir == +1) {
-	    while (p < lineend && wordness[p[1] & CHAR_MASK] == wvalue)
+	    while (p < lineend && curr_wordness[p[1] & CHAR_MASK] == wvalue)
 		p++;
 	} else {
-	    while (p > linestart && wordness[p[-1] & CHAR_MASK] == wvalue)
+	    while (p > linestart && curr_wordness[p[-1] & CHAR_MASK] == wvalue)
 		p--;
 	}
 	break;
@@ -1370,12 +1361,12 @@ static unsigned long *sel_spread_half (unsigned long *p, int dir) {
     return p;
 }
 
-static void sel_spread (void) {
-    selstart = sel_spread_half (selstart, -1);
-    selend = sel_spread_half (selend - 1, +1) + 1;
+static void sel_spread(Session *s) {
+    selstart = sel_spread_half(s, selstart, -1);
+    selend = sel_spread_half(s, selend - 1, +1) + 1;
 }
 
-void term_mouse (Mouse_Button b, Mouse_Action a, int x, int y) {
+void term_mouse(Session *s, Mouse_Button b, Mouse_Action a, int x, int y) {
     unsigned long *selpoint;
     
     if (x < 0) {
@@ -1392,17 +1383,17 @@ void term_mouse (Mouse_Button b, Mouse_Action a, int x, int y) {
 	selpoint = scrtop + rows * (cols + 1) - 1;
 
     if (b == MB_SELECT && a == MA_CLICK) {
-	deselect();
+	deselect(s);
 	selstate = ABOUT_TO;
 	selanchor = selpoint;
 	selmode = SM_CHAR;
     } else if (b == MB_SELECT && (a == MA_2CLK || a == MA_3CLK)) {
-	deselect();
+	deselect(s);
 	selmode = (a == MA_2CLK ? SM_WORD : SM_LINE);
 	selstate = DRAGGING;
 	selstart = selanchor = selpoint;
 	selend = selstart + 1;
-	sel_spread();
+	sel_spread(s);
     } else if ((b == MB_SELECT && a == MA_DRAG) ||
 	       (b == MB_EXTEND && a != MA_RELEASE)) {
 	if (selstate == ABOUT_TO && selanchor == selpoint)
@@ -1424,24 +1415,24 @@ void term_mouse (Mouse_Button b, Mouse_Action a, int x, int y) {
 	    selstart = selanchor;
 	    selend = selpoint + 1;
 	}
-	sel_spread();
+	sel_spread(s);
     } else if ((b == MB_SELECT || b == MB_EXTEND) && a == MA_RELEASE)
 	if (selstate == DRAGGING) {
 	    if (cfg.implicit_copy)
-		term_copy();
+		term_copy(s);
 	    selstate = SELECTED;
 	} else
 	    selstate = NO_SELECTION;
     else if (b == MB_PASTE && (a==MA_CLICK || a==MA_2CLK || a==MA_3CLK))
-	term_paste();
-    term_update();
+	term_paste(s);
+    term_update(s);
 }
 
 /*
  * We've completed a selection. We now transfer the
  * data to the clipboard.
  */
-void term_copy() {
+void term_copy(Session *s) {
     unsigned char *p = selspace;
     unsigned long *q = selstart;
 
@@ -1465,10 +1456,10 @@ void term_copy() {
 	}
 	q = lineend + 1;       /* start of next line */
     }
-    write_clip (selspace, p - selspace);
+    write_clip(selspace, p - selspace);
 }
 
-void term_paste() {
+void term_paste(Session *s) {
     char *data;
     int len;
 
@@ -1481,10 +1472,10 @@ void term_paste() {
 		   !(p <= data+len-sizeof(sel_nl) &&
 		     !memcmp(p, sel_nl, sizeof(sel_nl))))
 		p++;
-	    back->send (q, p-q);
+	    back->send(s, q, p-q);
 	    if (p <= data+len-sizeof(sel_nl) &&
 		!memcmp(p, sel_nl, sizeof(sel_nl))) {
-		back->send ("\015", 1);
+		back->send(s, "\015", 1);
 		p += sizeof(sel_nl);
 	    }
 	    q = p;
@@ -1496,17 +1487,17 @@ void term_paste() {
 /*
  * Find out if there's a selection.
  */
-int term_hasselection(void) {
+int term_hasselection(Session *s) {
 
     return selstate == SELECTED;
 }
 
-static void deselect (void) {
+static void deselect(Session *s) {
     selstate = NO_SELECTION;
     selstart = selend = scrtop;
 }
 
-void term_deselect (void) {
-    deselect();
-    term_update();
+void term_deselect(Session *s) {
+    deselect(s);
+    term_update(s);
 }

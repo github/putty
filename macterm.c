@@ -1,4 +1,4 @@
-/* $Id: macterm.c,v 1.1.2.31 1999/03/28 15:27:03 ben Exp $ */
+/* $Id: macterm.c,v 1.1.2.32 1999/03/29 19:50:23 ben Exp $ */
 /*
  * Copyright (c) 1999 Simon Tatham
  * Copyright (c) 1999 Ben Harris
@@ -64,31 +64,21 @@
 #define CURSOR_BG	22
 #define CURSOR_BG_BOLD	23
 
-#define PTOCC(x) ((x) < 0 ? -(-(x - font_width - 1) / font_width) : \
-			    (x) / font_width)
-#define PTOCR(y) ((y) < 0 ? -(-(y - font_height - 1) / font_height) : \
-			    (y) / font_height)
+#define PTOCC(x) ((x) < 0 ? -(-(x - s->font_width - 1) / s->font_width) : \
+			    (x) / s->font_width)
+#define PTOCR(y) ((y) < 0 ? -(-(y - s->font_height - 1) / s->font_height) : \
+			    (y) / s->font_height)
 
-struct mac_session {
-    short		fontnum;
-    int			font_ascent;
-    int			font_leading;
-    WindowPtr		window;
-    PaletteHandle	palette;
-    ControlHandle	scrollbar;
-    WCTabHandle		wctab;
-};
-
-static void mac_initfont(struct mac_session *);
-static void mac_initpalette(struct mac_session *);
-static void mac_adjustwinbg(struct mac_session *);
-static void mac_adjustsize(struct mac_session *, int, int);
-static void mac_drawgrowicon(struct mac_session *s);
+static void mac_initfont(Session *);
+static void mac_initpalette(Session *);
+static void mac_adjustwinbg(Session *);
+static void mac_adjustsize(Session *, int, int);
+static void mac_drawgrowicon(Session *s);
 static pascal void mac_scrolltracker(ControlHandle, short);
 static pascal void do_text_for_device(short, short, GDHandle, long);
 static pascal void mac_set_attr_mask(short, short, GDHandle, long);
-static int mac_keytrans(struct mac_session *, EventRecord *, unsigned char *);
-static void text_click(struct mac_session *, EventRecord *);
+static int mac_keytrans(Session *, EventRecord *, unsigned char *);
+static void text_click(Session *, EventRecord *);
 
 #if TARGET_RT_MAC_CFM
 static RoutineDescriptor mac_scrolltracker_upp =
@@ -111,19 +101,17 @@ static RoutineDescriptor mac_set_attr_mask_upp =
  * sessions
  */
 
-static struct mac_session *onlysession;
-
-static void inbuf_putc(int c) {
-    inbuf[inbuf_head] = c;
-    inbuf_head = (inbuf_head+1) & INBUF_MASK;
+static void inbuf_putc(Session *s, int c) {
+    s->inbuf[s->inbuf_head] = c;
+    s->inbuf_head = (s->inbuf_head+1) & INBUF_MASK;
 }
 
-static void inbuf_putstr(const char *c) {
+static void inbuf_putstr(Session *s, const char *c) {
     while (*c)
-	inbuf_putc(*c++);
+	inbuf_putc(s, *c++);
 }
 
-static void display_resource(unsigned long type, short id) {
+static void display_resource(Session *s, unsigned long type, short id) {
     Handle h;
     int len, i;
     char *t;
@@ -135,8 +123,8 @@ static void display_resource(unsigned long type, short id) {
     t = *h;
     len = GetResourceSizeOnDisk(h);
     for (i = 0; i < len; i++) {
-	inbuf_putc(t[i]);
-	term_out();
+	inbuf_putc(s, t[i]);
+	term_out(s);
     }
     SetResAttrs(h, GetResAttrs(h) & ~resLocked);
     ReleaseResource(h);
@@ -144,16 +132,15 @@ static void display_resource(unsigned long type, short id) {
 	
 
 void mac_newsession(void) {
-    struct mac_session *s;
+    Session *s;
     UInt32 starttime;
     char msg[128];
 
     /* This should obviously be initialised by other means */
-    mac_loadconfig(&cfg);
-    back = &hexdump_backend;
     s = smalloc(sizeof(*s));
     memset(s, 0, sizeof(*s));
-    onlysession = s;
+    mac_loadconfig(&s->cfg);
+    s->back = &hexdump_backend;
 	
     /* XXX: Own storage management? */
     if (mac_gestalts.qdvers == gestaltOriginalQD)
@@ -162,38 +149,38 @@ void mac_newsession(void) {
 	s->window = GetNewCWindow(wTerminal, NULL, (WindowPtr)-1);
     SetWRefCon(s->window, (long)s);
     s->scrollbar = GetNewControl(cVScroll, s->window);
-    term_init();
-    term_size(cfg.height, cfg.width, cfg.savelines);
+    term_init(s);
+    term_size(s, s->cfg.height, s->cfg.width, s->cfg.savelines);
     mac_initfont(s);
     mac_initpalette(s);
-    attr_mask = ATTR_MASK;
+    s->attr_mask = ATTR_MASK;
     /* Set to FALSE to not get palette updates in the background. */
     SetPalette(s->window, s->palette, TRUE); 
     ActivatePalette(s->window);
     ShowWindow(s->window);
     starttime = TickCount();
-    display_resource('pTST', 128);
+    display_resource(s, 'pTST', 128);
     sprintf(msg, "Elapsed ticks: %d\015\012", TickCount() - starttime);
-    inbuf_putstr(msg);
-    term_out();
+    inbuf_putstr(s, msg);
+    term_out(s);
 }
 
-static void mac_initfont(struct mac_session *s) {
+static void mac_initfont(Session *s) {
     Str255 macfont;
     FontInfo fi;
  
     SetPort(s->window);
-    macfont[0] = sprintf((char *)&macfont[1], "%s", cfg.font);
+    macfont[0] = sprintf((char *)&macfont[1], "%s", s->cfg.font);
     GetFNum(macfont, &s->fontnum);
     TextFont(s->fontnum);
-    TextFace(cfg.fontisbold ? bold : 0);
-    TextSize(cfg.fontheight);
+    TextFace(s->cfg.fontisbold ? bold : 0);
+    TextSize(s->cfg.fontheight);
     GetFontInfo(&fi);
-    font_width = CharWidth('W'); /* Well, it's what NCSA uses. */
+    s->font_width = CharWidth('W'); /* Well, it's what NCSA uses. */
     s->font_ascent = fi.ascent;
     s->font_leading = fi.leading;
-    font_height = s->font_ascent + fi.descent + s->font_leading;
-    mac_adjustsize(s, rows, cols);
+    s->font_height = s->font_ascent + fi.descent + s->font_leading;
+    mac_adjustsize(s, s->rows, s->cols);
 }
 
 /*
@@ -202,11 +189,11 @@ static void mac_initfont(struct mac_session *s) {
  * It's assumed the terminal emulator will be informed, and will set rows
  * and cols for us.
  */
-static void mac_adjustsize(struct mac_session *s, int newrows, int newcols) {
+static void mac_adjustsize(Session *s, int newrows, int newcols) {
     int winwidth, winheight;
 
-    winwidth = newcols * font_width + 15;
-    winheight = newrows * font_height;
+    winwidth = newcols * s->font_width + 15;
+    winheight = newrows * s->font_height;
     SizeWindow(s->window, winwidth, winheight, true);
     HideControl(s->scrollbar);
     MoveControl(s->scrollbar, winwidth - 15, -1);
@@ -214,14 +201,16 @@ static void mac_adjustsize(struct mac_session *s, int newrows, int newcols) {
     ShowControl(s->scrollbar);
 }
 
-static void mac_initpalette(struct mac_session *s) {
+static void mac_initpalette(Session *s) {
   
     if (mac_gestalts.qdvers == gestaltOriginalQD)
 	return;
-    s->palette = NewPalette((*cfg.colours)->pmEntries, NULL, pmCourteous, 0);
+    s->palette = NewPalette((*s->cfg.colours)->pmEntries,
+			    NULL, pmCourteous, 0);
     if (s->palette == NULL)
 	fatalbox("Unable to create palette");
-    CopyPalette(cfg.colours, s->palette, 0, 0, (*cfg.colours)->pmEntries);
+    CopyPalette(s->cfg.colours, s->palette, 0, 0,
+		(*s->cfg.colours)->pmEntries);
     mac_adjustwinbg(s);
 }
 
@@ -229,9 +218,9 @@ static void mac_initpalette(struct mac_session *s) {
  * Set the background colour of the window correctly.  Should be
  * called whenever the default background changes.
  */
-static void mac_adjustwinbg(struct mac_session *s) {
+static void mac_adjustwinbg(Session *s) {
 
-#if 0 /* XXX doesn't link (at least for 68k) */
+#if TARGET_RT_CFM /* XXX doesn't link (at least for 68k) */
     if (mac_gestalts.windattr & gestaltWindowMgrPresent)
 	SetWindowContentColor(s->window,
 			      &(*s->palette)->pmInfo[DEFAULT_BG].ciRGB);
@@ -255,13 +244,13 @@ static void mac_adjustwinbg(struct mac_session *s) {
  * Set the cursor shape correctly
  */
 void mac_adjusttermcursor(WindowPtr window, Point mouse, RgnHandle cursrgn) {
-    struct mac_session *s;
+    Session *s;
     ControlHandle control;
     short part;
     int x, y;
 
     SetPort(window);
-    s = (struct mac_session *)GetWRefCon(window);
+    s = (Session *)GetWRefCon(window);
     GlobalToLocal(&mouse);
     part = FindControl(mouse, window, &control);
     if (control == s->scrollbar) {
@@ -269,12 +258,12 @@ void mac_adjusttermcursor(WindowPtr window, Point mouse, RgnHandle cursrgn) {
 	RectRgn(cursrgn, &(*s->scrollbar)->contrlRect);
 	SectRgn(cursrgn, window->visRgn, cursrgn);
     } else {
-	x = mouse.h / font_width;
-	y = mouse.v / font_height;
+	x = mouse.h / s->font_width;
+	y = mouse.v / s->font_height;
 	SetCursor(*GetCursor(iBeamCursor));
 	/* Ask for shape changes if we leave this character cell. */
-	SetRectRgn(cursrgn, x * font_width, y * font_height,
-		   (x + 1) * font_width, (y + 1) * font_height);
+	SetRectRgn(cursrgn, x * s->font_width, y * s->font_height,
+		   (x + 1) * s->font_width, (y + 1) * s->font_height);
 	SectRgn(cursrgn, window->visRgn, cursrgn);
     }
 }
@@ -283,16 +272,16 @@ void mac_adjusttermcursor(WindowPtr window, Point mouse, RgnHandle cursrgn) {
  * Enable/disable menu items based on the active terminal window.
  */
 void mac_adjusttermmenus(WindowPtr window) {
-    struct mac_session *s;
+    Session *s;
     MenuHandle menu;
     long offset;
 
-    s = (struct mac_session *)GetWRefCon(window);
+    s = (Session *)GetWRefCon(window);
     menu = GetMenuHandle(mEdit);
     EnableItem(menu, 0);
     DisableItem(menu, iUndo);
     DisableItem(menu, iCut);
-    if (term_hasselection())
+    if (term_hasselection(s))
 	EnableItem(menu, iCopy);
     else
 	DisableItem(menu, iCopy);
@@ -305,29 +294,29 @@ void mac_adjusttermmenus(WindowPtr window) {
 }
 
 void mac_menuterm(WindowPtr window, short menu, short item) {
-    struct mac_session *s;
+    Session *s;
 
-    s = (struct mac_session *)GetWRefCon(window);
+    s = (Session *)GetWRefCon(window);
     switch (menu) {
       case mEdit:
 	switch (item) {
 	  case iCopy:
-	    term_copy();
+	    term_copy(s);
 	    break;
 	  case iPaste:
-	    term_paste();
+	    term_paste(s);
 	    break;
 	}
     }
 }
 	    
 void mac_clickterm(WindowPtr window, EventRecord *event) {
-    struct mac_session *s;
+    Session *s;
     Point mouse;
     ControlHandle control;
     int part;
 
-    s = (struct mac_session *)GetWRefCon(window);
+    s = (Session *)GetWRefCon(window);
     SetPort(window);
     mouse = event->where;
     GlobalToLocal(&mouse);
@@ -336,7 +325,7 @@ void mac_clickterm(WindowPtr window, EventRecord *event) {
 	switch (part) {
 	  case kControlIndicatorPart:
 	    if (TrackControl(control, mouse, NULL) == kControlIndicatorPart)
-		term_scroll(+1, GetControlValue(control));
+		term_scroll(s, +1, GetControlValue(control));
 	    break;
 	  case kControlUpButtonPart:
 	  case kControlDownButtonPart:
@@ -350,11 +339,11 @@ void mac_clickterm(WindowPtr window, EventRecord *event) {
     }
 }
 
-static void text_click(struct mac_session *s, EventRecord *event) {
+static void text_click(Session *s, EventRecord *event) {
     Point localwhere;
     int row, col;
     static UInt32 lastwhen = 0;
-    static struct mac_session *lastsess = NULL;
+    static Session *lastsess = NULL;
     static int lastrow = -1, lastcol = -1;
     static Mouse_Action lastact = MA_NOTHING;
 
@@ -371,7 +360,7 @@ static void text_click(struct mac_session *s, EventRecord *event) {
 		   lastact == MA_3CLK ? MA_CLICK : MA_NOTHING);
     else
 	lastact = MA_CLICK;
-    term_mouse(event->modifiers & shiftKey ? MB_EXTEND : MB_SELECT, lastact,
+    term_mouse(s, event->modifiers & shiftKey ? MB_EXTEND : MB_SELECT, lastact,
 	       col, row);
     lastsess = s;
     lastrow = row;
@@ -380,15 +369,15 @@ static void text_click(struct mac_session *s, EventRecord *event) {
 	GetMouse(&localwhere);
 	col = PTOCC(localwhere.h);
 	row = PTOCR(localwhere.v);
-	term_mouse(event->modifiers & shiftKey ? MB_EXTEND : MB_SELECT,
+	term_mouse(s, event->modifiers & shiftKey ? MB_EXTEND : MB_SELECT,
 		   MA_DRAG, col, row);
-	if (row > rows - 1)
-	    term_scroll(0, row - (rows - 1));
+	if (row > s->rows - 1)
+	    term_scroll(s, 0, row - (s->rows - 1));
 	else if (row < 0)
-	    term_scroll(0, row);
+	    term_scroll(s, 0, row);
     }
-    term_mouse(event->modifiers & shiftKey ? MB_EXTEND : MB_SELECT, MA_RELEASE,
-	       col, row);
+    term_mouse(s, event->modifiers & shiftKey ? MB_EXTEND : MB_SELECT,
+	       MA_RELEASE, col, row);
     lastwhen = TickCount();
 }
 
@@ -423,21 +412,21 @@ void get_clip(void **p, int *lenp) {
 }
 
 static pascal void mac_scrolltracker(ControlHandle control, short part) {
-    struct mac_session *s;
+    Session *s;
 
-    s = (struct mac_session *)GetWRefCon((*control)->contrlOwner);
+    s = (Session *)GetWRefCon((*control)->contrlOwner);
     switch (part) {
       case kControlUpButtonPart:
-	term_scroll(0, -1);
+	term_scroll(s, 0, -1);
 	break;
       case kControlDownButtonPart:
-	term_scroll(0, +1);
+	term_scroll(s, 0, +1);
 	break;
       case kControlPageUpPart:
-	term_scroll(0, -(rows - 1));
+	term_scroll(s, 0, -(s->rows - 1));
 	break;
       case kControlPageDownPart:
-	term_scroll(0, +(rows - 1));
+	term_scroll(s, 0, +(s->rows - 1));
 	break;
     }
 }
@@ -490,11 +479,11 @@ static pascal void mac_scrolltracker(ControlHandle control, short part) {
 void mac_keyterm(WindowPtr window, EventRecord *event) {
     unsigned char buf[20];
     int len;
-    struct mac_session *s;
+    Session *s;
 
-    s = (struct mac_session *)GetWRefCon(window);
+    s = (Session *)GetWRefCon(window);
     len = mac_keytrans(s, event, buf);
-    back->send((char *)buf, len);
+    s->back->send(s, (char *)buf, len);
 }
 
 static UInt32 mac_rekey(EventModifiers newmodifiers, UInt32 oldmessage) {
@@ -516,7 +505,7 @@ static UInt32 mac_rekey(EventModifiers newmodifiers, UInt32 oldmessage) {
 }
 
 
-static int mac_keytrans(struct mac_session *s, EventRecord *event,
+static int mac_keytrans(Session *s, EventRecord *event,
 			unsigned char *output) {
     unsigned char *p = output;
     int code;
@@ -525,9 +514,9 @@ static int mac_keytrans(struct mac_session *s, EventRecord *event,
 
     /* Check if the meta "key" was held down */
 
-    if ((event->modifiers & cfg.meta_modifiers) == cfg.meta_modifiers) {
+    if ((event->modifiers & s->cfg.meta_modifiers) == s->cfg.meta_modifiers) {
 	*p++ = '\033';
-	event->modifiers &= ~cfg.meta_modifiers;
+	event->modifiers &= ~s->cfg.meta_modifiers;
 	event->message = mac_rekey(event->modifiers, event->message);
     }
 
@@ -535,10 +524,10 @@ static int mac_keytrans(struct mac_session *s, EventRecord *event,
     if (event->modifiers & shiftKey) {
 	switch (event->message & keyCodeMask) {
 	  case K_PRIOR: /* shift-pageup */
-	    term_scroll(0, -(rows - 1));
+	    term_scroll(s, 0, -(s->rows - 1));
 	    return 0;
 	  case K_NEXT:  /* shift-pagedown */
-	    term_scroll(0, +(rows - 1));
+	    term_scroll(s, 0, +(s->rows - 1));
 	    return 0;
 	}
     }
@@ -598,11 +587,11 @@ static int mac_keytrans(struct mac_session *s, EventRecord *event,
       case K_PRIOR: code = 5; break;
       case K_NEXT: code = 6; break;
     }
-    if (cfg.linux_funkeys && code >= 11 && code <= 15) {
+    if (s->cfg.linux_funkeys && code >= 11 && code <= 15) {
 	p += sprintf((char *)p, "\x1B[[%c", code + 'A' - 11);
 	return p - output;
     }
-    if (cfg.rxvt_homeend && (code == 1 || code == 4)) {
+    if (s->cfg.rxvt_homeend && (code == 1 || code == 4)) {
 	p += sprintf((char *)p, code == 1 ? "\x1B[H" : "\x1BOw");
 	return p - output;
     }
@@ -611,7 +600,7 @@ static int mac_keytrans(struct mac_session *s, EventRecord *event,
 	return p - output;
     }
 
-    if (app_keypad_keys) {
+    if (s->app_keypad_keys) {
 	switch (event->message & keyCodeMask) {
 	  case KP_ENTER: p += sprintf((char *)p, "\x1BOM"); return p - output;
 	  case KP_CLEAR: p += sprintf((char *)p, "\x1BOP"); return p - output;
@@ -636,22 +625,22 @@ static int mac_keytrans(struct mac_session *s, EventRecord *event,
 
     switch (event->message & keyCodeMask) {
       case K_UP:
-	p += sprintf((char *)p, app_cursor_keys ? "\x1BOA" : "\x1B[A");
+	p += sprintf((char *)p, s->app_cursor_keys ? "\x1BOA" : "\x1B[A");
 	return p - output;
       case K_DOWN:
-	p += sprintf((char *)p, app_cursor_keys ? "\x1BOB" : "\x1B[B");
+	p += sprintf((char *)p, s->app_cursor_keys ? "\x1BOB" : "\x1B[B");
 	return p - output;
       case K_RIGHT:
-	p += sprintf((char *)p, app_cursor_keys ? "\x1BOC" : "\x1B[C");
+	p += sprintf((char *)p, s->app_cursor_keys ? "\x1BOC" : "\x1B[C");
 	return p - output;
       case K_LEFT:
-	p += sprintf((char *)p, app_cursor_keys ? "\x1BOD" : "\x1B[D");
+	p += sprintf((char *)p, s->app_cursor_keys ? "\x1BOD" : "\x1B[D");
 	return p - output;
       case KP_ENTER:
 	*p++ = 0x0d;
 	return p - output;
       case K_BS:
-	*p++ = (cfg.bksp_is_delete ? 0x7f : 0x08);
+	*p++ = (s->cfg.bksp_is_delete ? 0x7f : 0x08);
 	return p - output;
       default:
 	*p++ = event->message & charCodeMask;
@@ -663,25 +652,25 @@ void mac_growterm(WindowPtr window, EventRecord *event) {
     Rect limits;
     long grow_result;
     int newrows, newcols;
-    struct mac_session *s;
+    Session *s;
 
-    s = (struct mac_session *)GetWRefCon(window);
-    SetRect(&limits, font_width + 15, font_height, SHRT_MAX, SHRT_MAX);
+    s = (Session *)GetWRefCon(window);
+    SetRect(&limits, s->font_width + 15, s->font_height, SHRT_MAX, SHRT_MAX);
     grow_result = GrowWindow(window, event->where, &limits);
     if (grow_result != 0) {
-	newrows = HiWord(grow_result) / font_height;
-	newcols = (LoWord(grow_result) - 15) / font_width;
+	newrows = HiWord(grow_result) / s->font_height;
+	newcols = (LoWord(grow_result) - 15) / s->font_width;
 	mac_adjustsize(s, newrows, newcols);
-	term_size(newrows, newcols, cfg.savelines);
+	term_size(s, newrows, newcols, s->cfg.savelines);
     }
 }
 
 void mac_activateterm(WindowPtr window, Boolean active) {
-    struct mac_session *s;
+    Session *s;
 
-    s = (struct mac_session *)GetWRefCon(window);
-    has_focus = active;
-    term_update();
+    s = (Session *)GetWRefCon(window);
+    s->has_focus = active;
+    term_update(s);
     if (active)
 	ShowControl(s->scrollbar);
     else {
@@ -692,11 +681,12 @@ void mac_activateterm(WindowPtr window, Boolean active) {
 }
 
 void mac_updateterm(WindowPtr window) {
-    struct mac_session *s;
+    Session *s;
 
-    s = (struct mac_session *)GetWRefCon(window);
+    s = (Session *)GetWRefCon(window);
+    SetPort(window);
     BeginUpdate(window);
-    get_ctx();
+    pre_paint(s);
     term_paint(s,
 	       (*window->visRgn)->rgnBBox.left,
 	       (*window->visRgn)->rgnBBox.top,
@@ -709,11 +699,11 @@ void mac_updateterm(WindowPtr window) {
 	EraseRect(&(*s->scrollbar)->contrlRect);
     UpdateControls(window, window->visRgn);
     mac_drawgrowicon(s);
-    free_ctx(NULL);
+    post_paint(s);
     EndUpdate(window);
 }
 
-static void mac_drawgrowicon(struct mac_session *s) {
+static void mac_drawgrowicon(Session *s) {
     Rect clip;
 
     SetPort(s->window);
@@ -727,7 +717,7 @@ static void mac_drawgrowicon(struct mac_session *s) {
 }    
 
 struct do_text_args {
-    struct mac_session *s;
+    Session *s;
     Rect textrect;
     Rect leadrect;
     char *text;
@@ -740,7 +730,7 @@ struct do_text_args {
  *
  * x and y are text row and column (zero-based)
  */
-void do_text(struct mac_session *s, int x, int y, char *text, int len,
+void do_text(Session *s, int x, int y, char *text, int len,
 	     unsigned long attr) {
     int style = 0;
     struct do_text_args a;
@@ -749,10 +739,10 @@ void do_text(struct mac_session *s, int x, int y, char *text, int len,
     SetPort(s->window);
     
     /* First check this text is relevant */
-    a.textrect.top = y * font_height;
-    a.textrect.bottom = (y + 1) * font_height;
-    a.textrect.left = x * font_width;
-    a.textrect.right = (x + len) * font_width;
+    a.textrect.top = y * s->font_height;
+    a.textrect.bottom = (y + 1) * s->font_height;
+    a.textrect.left = x * s->font_width;
+    a.textrect.right = (x + len) * s->font_width;
     if (!RectInRgn(&a.textrect, s->window->visRgn))
 	return;
 
@@ -768,12 +758,12 @@ void do_text(struct mac_session *s, int x, int y, char *text, int len,
 	SetRect(&a.leadrect, 0, 0, 0, 0);
     SetPort(s->window);
     TextFont(s->fontnum);
-    if (cfg.fontisbold || (attr & ATTR_BOLD) && !cfg.bold_colour)
+    if (s->cfg.fontisbold || (attr & ATTR_BOLD) && !s->cfg.bold_colour)
     	style |= bold;
     if (attr & ATTR_UNDER)
 	style |= underline;
     TextFace(style);
-    TextSize(cfg.fontheight);
+    TextSize(s->cfg.fontheight);
     SetFractEnable(FALSE); /* We want characters on pixel boundaries */
     textrgn = NewRgn();
     RectRgn(textrgn, &a.textrect);
@@ -790,7 +780,7 @@ static pascal void do_text_for_device(short depth, short devflags,
 
     a = (struct do_text_args *)cookie;
 
-    bright = (a->attr & ATTR_BOLD) && cfg.bold_colour;
+    bright = (a->attr & ATTR_BOLD) && a->s->cfg.bold_colour;
 
     TextMode(a->attr & ATTR_REVERSE ? notSrcCopy : srcCopy);
 
@@ -856,28 +846,28 @@ static pascal void do_text_for_device(short depth, short devflags,
  * Call from the terminal emulator to get its graphics context.
  * Should probably be called start_redraw or something.
  */
-struct mac_session *get_ctx(void) {
-    struct mac_session *s = onlysession;
+void pre_paint(Session *s) {
 
-    attr_mask = ATTR_INVALID;
+    s->attr_mask = ATTR_INVALID;
     DeviceLoop(s->window->visRgn, &mac_set_attr_mask_upp, (long)s, 0);
-    return s;
 }
 
 static pascal void mac_set_attr_mask(short depth, short devflags,
 				     GDHandle device, long cookie) {
 
+    Session *s = (Session *)cookie;
+
     switch (depth) {
       default:
-	attr_mask |= ATTR_FGMASK | ATTR_BGMASK;
+	s->attr_mask |= ATTR_FGMASK | ATTR_BGMASK;
 	/* FALLTHROUGH */
       case 2:
-	attr_mask |= ATTR_BOLD;
+	s->attr_mask |= ATTR_BOLD;
 	/* FALLTHROUGH */
       case 1:
-	attr_mask |= ATTR_UNDER | ATTR_REVERSE | ATTR_ACTCURS |
+	s->attr_mask |= ATTR_UNDER | ATTR_REVERSE | ATTR_ACTCURS |
 	    ATTR_PASCURS | ATTR_ASCII | ATTR_GBCHR | ATTR_LINEDRW |
-	    (cfg.bold_colour ? 0 : ATTR_BOLD); 
+	    (s->cfg.bold_colour ? 0 : ATTR_BOLD); 
 	break;
     }
 }
@@ -885,7 +875,7 @@ static pascal void mac_set_attr_mask(short depth, short devflags,
 /*
  * Presumably this does something in Windows
  */
-void free_ctx(struct mac_session *ctx) {
+void post_paint(Session *s) {
 
 }
 
@@ -896,14 +886,13 @@ void free_ctx(struct mac_session *ctx) {
  * start is the line number of the top of the display
  * page is the length of the displayed page
  */
-void set_sbar(int total, int start, int page) {
-    struct mac_session *s = onlysession;
+void set_sbar(Session *s, int total, int start, int page) {
 
     /* We don't redraw until we've set everything up, to avoid glitches */
     (*s->scrollbar)->contrlMin = 0;
     (*s->scrollbar)->contrlMax = total - page;
     SetControlValue(s->scrollbar, start);
-#if 0
+#if TARGET_RT_CFM
     /* XXX: This doesn't link for me. */
     if (mac_gestalts.cntlattr & gestaltControlMgrPresent)
 	SetControlViewSize(s->scrollbar, page);
@@ -913,7 +902,7 @@ void set_sbar(int total, int start, int page) {
 /*
  * Beep
  */
-void beep(void) {
+void beep(Session *s) {
 
     SysBeep(30);
     /*
@@ -925,16 +914,15 @@ void beep(void) {
 /*
  * Set icon string -- a no-op here (Windowshade?)
  */
-void set_icon(char *icon) {
+void set_icon(Session *s, char *icon) {
 
 }
 
 /*
  * Set the window title
  */
-void set_title(char *title) {
+void set_title(Session *s, char *title) {
     Str255 mactitle;
-    struct mac_session *s = onlysession;
 
     mactitle[0] = sprintf((char *)&mactitle[1], "%s", title);
     SetWTitle(s->window, mactitle);
@@ -943,19 +931,18 @@ void set_title(char *title) {
 /*
  * Resize the window at the emulator's request
  */
-void request_resize(int w, int h) {
+void request_resize(Session *s, int w, int h) {
 
-    cols = w;
-    rows = h;
-    mac_initfont(onlysession);
+    s->cols = w;
+    s->rows = h;
+    mac_initfont(s);
 }
 
 /*
  * Set the logical palette
  */
-void palette_set(int n, int r, int g, int b) {
+void palette_set(Session *s, int n, int r, int g, int b) {
     RGBColor col;
-    struct mac_session *s = onlysession;
     static const int first[21] = {
 	0, 2, 4, 6, 8, 10, 12, 14,
 	1, 3, 5, 7, 9, 11, 13, 15,
@@ -978,12 +965,12 @@ void palette_set(int n, int r, int g, int b) {
 /*
  * Reset to the default palette
  */
-void palette_reset(void) {
-    struct mac_session *s = onlysession;
+void palette_reset(Session *s) {
 
     if (mac_gestalts.qdvers == gestaltOriginalQD)
 	return;
-    CopyPalette(cfg.colours, s->palette, 0, 0, (*cfg.colours)->pmEntries);
+    CopyPalette(s->cfg.colours, s->palette, 0, 0,
+		(*s->cfg.colours)->pmEntries);
     mac_adjustwinbg(s);
     ActivatePalette(s->window);
     /* Palette Manager will generate update events as required. */
@@ -993,17 +980,16 @@ void palette_reset(void) {
  * Scroll the screen. (`lines' is +ve for scrolling forward, -ve
  * for backward.)
  */
-void do_scroll(int topline, int botline, int lines) {
-    struct mac_session *s = onlysession;
+void do_scroll(Session *s, int topline, int botline, int lines) {
     Rect r;
     RgnHandle update;
 
     SetPort(s->window);
     PmBackColor(DEFAULT_BG);
     update = NewRgn();
-    SetRect(&r, 0, topline * font_height,
-	    cols * font_width, (botline + 1) * font_height);
-    ScrollRect(&r, 0, - lines * font_height, update);
+    SetRect(&r, 0, topline * s->font_height,
+	    s->cols * s->font_width, (botline + 1) * s->font_height);
+    ScrollRect(&r, 0, - lines * s->font_height, update);
     /* XXX: move update region? */
     InvalRgn(update);
     DisposeRgn(update);

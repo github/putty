@@ -1,4 +1,4 @@
-/* $Id: testback.c,v 1.1.2.4 1999/03/28 15:25:45 ben Exp $ */
+/* $Id: testback.c,v 1.1.2.5 1999/03/29 19:50:24 ben Exp $ */
 /*
  * Copyright (c) 1999 Simon Tatham
  * Copyright (c) 1999 Ben Harris
@@ -33,13 +33,13 @@
 
 #include "putty.h"
 
-static char *null_init(char *, int, char **);
-static int null_msg(void);
-static void null_send(char *, int);
-static void loop_send(char *, int);
-static void hexdump_send(char *, int);
-static void null_size(void);
-static void null_special(Telnet_Special);
+static char *null_init(Session *, char *, int, char **);
+static int null_msg(Session *);
+static void null_send(Session *, char *, int);
+static void loop_send(Session *, char *, int);
+static void hexdump_send(Session *, char *, int);
+static void null_size(Session *);
+static void null_special(Session *, Telnet_Special);
 
 Backend null_backend = {
     null_init, null_msg, null_send, null_size, null_special
@@ -53,49 +53,49 @@ Backend hexdump_backend = {
     null_init, null_msg, hexdump_send, null_size, null_special
 };
 
-static char *null_init(char *host, int port, char **realhost) {
+static char *null_init(Session *s, char *host, int port, char **realhost) {
 
     return NULL;
 }
 
-static int null_msg(void) {
+static int null_msg(Session *s) {
 
     return 1;
 }
 
-static void null_send(char *buf, int len) {
+static void null_send(Session *s, char *buf, int len) {
 
 }
 
-static void loop_send (char *buf, int len) {
+static void loop_send (Session *s, char *buf, int len) {
 
     while (len--) {
-	int new_head = (inbuf_head + 1) & INBUF_MASK;
+	int new_head = (s->inbuf_head + 1) & INBUF_MASK;
 	int c = (unsigned char) *buf;
-	if (new_head != inbuf_reap) {
-	    inbuf[inbuf_head] = *buf++;
-	    inbuf_head = new_head;
+	if (new_head != s->inbuf_reap) {
+	    s->inbuf[s->inbuf_head] = *buf++;
+	    s->inbuf_head = new_head;
 	}
     }
-    term_out();
-    term_update();
+    term_out(s);
+    term_update(s);
 }
 
-static void hexdump_send(char *buf, int len) {
+static void hexdump_send(Session *s, char *buf, int len) {
     static char mybuf[10];
     int mylen;
 
     while (len--) {
 	mylen = sprintf(mybuf, "%02x\015\012", (unsigned char)*buf++);
-	loop_send(mybuf, mylen);
+	loop_send(s, mybuf, mylen);
     }
 }
 
-static void null_size(void) {
+static void null_size(Session *s) {
 
 }
 
-static void null_special(Telnet_Special code) {
+static void null_special(Session *s, Telnet_Special code) {
 
 }
 
