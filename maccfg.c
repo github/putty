@@ -1,11 +1,13 @@
-/* $Id: maccfg.c,v 1.1.2.3 1999/03/16 20:27:30 ben Exp $ */
+/* $Id: maccfg.c,v 1.1.2.4 1999/03/23 21:00:05 ben Exp $ */
 /*
  * maccfg.c -- Mac port configuration
  */
 
+#include <MacMemory.h>
 #include <Resources.h>
 #include <TextUtils.h>
 
+#include <assert.h>
 #include <string.h>
 
 #include "putty.h"
@@ -86,10 +88,10 @@ void mac_loadconfig(Config *cfg) {
     h = GetResource('pSET', PREF_settings);
     if (h == NULL || *h == NULL)
 	fatalbox("Can't load settings");
-    if (GetResourceSizeOnDisk(h) != sizeof(struct pSET))
+    HLock(h);
+    if (GetHandleSize(h) != sizeof(struct pSET))
 	fatalbox("Settings resource is wrong size (%d vs %d)",
-		 GetResourceSizeOnDisk(h), sizeof(struct pSET));
-    SetResAttrs(h, GetResAttrs(h) | resLocked);
+		 GetHandleSize(h), sizeof(struct pSET));
     s = (struct pSET *)*h;
     /* Basic */
     get_string(&s->host, cfg->host, sizeof(cfg->host));
@@ -131,7 +133,7 @@ void mac_loadconfig(Config *cfg) {
     /* Selection */
     cfg->implicit_copy = (s->selection_flags & IMPLICIT_COPY) != 0;
     get_wordness(s->wordness_id, cfg->wordness);
-    SetResAttrs(h, GetResAttrs(h) & ~resLocked);
+    HUnlock(h);
     ReleaseResource(h);
 }
 
