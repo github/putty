@@ -1,4 +1,4 @@
-/* $Id: mac_res.r,v 1.1.2.15 1999/03/29 19:48:50 ben Exp $ */
+/* $Id: mac_res.r,v 1.1.2.16 1999/04/01 21:27:36 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -44,15 +44,6 @@ type 'pTTY' as 'STR ';
 
 resource 'pTTY' (0, purgeable) {
     "PuTTY experimental Mac port"
-};
-
-resource 'vers' (1, purgeable) {
-    0x00, 0x45,		/* Major and minor (BCD) */
-    development, 0,	/* Status and pre-release */
-    2,			/* Region code (2 = UK) */
-    "Dev 0.45 Mac 0",		/* Short version (list views) */
-    "Dev 0.45 Mac 0"
-    "Copyright Simon Tatham 1997-9",	/* Long version (get info) */
 };
 
 resource 'SIZE' (-1) {
