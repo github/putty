@@ -1,4 +1,4 @@
-/* $Id: opentpt.c,v 1.1.2.3 1999/09/01 22:24:41 ben Exp $ */
+/* $Id: opentpt.c,v 1.1.2.4 1999/09/07 23:41:32 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -30,6 +30,7 @@
 #include <OpenTransport.h>
 #include <OpenTptInternet.h>
 
+#include <assert.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -107,8 +108,10 @@ static void *otpt_open(Session *sess, char const *host, int port) {
     TCall remote;
     DNSAddress *remoteaddr;
     
+    assert(otpt_config != kOTInvalidConfigurationPtr);
     s = smalloc(sizeof(*s));
     memset(s, 0, sizeof(*s));
+    s->sess = sess;
 
     /* Get a TCP endpoint (equiv of socket()) */
     s->ep = OTOpenEndpoint(OTCloneConfiguration(otpt_config), 0, NULL, &err);
@@ -265,6 +268,7 @@ static pascal void otpt_notifier(void *contextPtr, OTEventCode code,
 	 * -3199.
 	 */
 	status = OTRcvDisconnect(s->ep, &discon);
+	Debugger();
 	if (cookie == NULL) /* spontaneous disconnect */
 	    switch (E2OSStatus(discon.reason)) {
 	      case kECONNRESETErr:
