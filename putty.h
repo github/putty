@@ -144,6 +144,7 @@ typedef struct {
     int linux_funkeys;
     int app_cursor;
     int app_keypad;
+    int meta_modifiers;
     /* Terminal options */
     int savelines;
     int dec_om;
@@ -209,6 +210,9 @@ void get_clip (void **, int *);
 void optimised_move (int, int, int);
 void do_scroll(int, int, int);
 void fatalbox (const char *, ...);
+#ifdef macintosh
+#pragma noreturn (fatalbox)
+#endif
 void beep (void);
 #define OPTIMISE_IS_SCROLL 1
 

@@ -1,4 +1,4 @@
-/* $Id: maccfg.c,v 1.1.2.4 1999/03/23 21:00:05 ben Exp $ */
+/* $Id: maccfg.c,v 1.1.2.5 1999/03/28 02:06:10 ben Exp $ */
 /*
  * maccfg.c -- Mac port configuration
  */
@@ -75,6 +75,7 @@ struct pSET {
     long font_height;
     short colours_id;
     short wordness_id;
+    unsigned short meta_modifiers;
 };
 #pragma options align=reset
 
@@ -112,6 +113,7 @@ void mac_loadconfig(Config *cfg) {
     cfg->linux_funkeys = (s->kbd_flags & LINUX_FUNKEYS) != 0;
     cfg->app_cursor = (s->kbd_flags & APP_CURSOR) != 0;
     cfg->app_keypad = (s->kbd_flags & APP_KEYPAD) != 0;
+    cfg->meta_modifiers = s->meta_modifiers;
     /* Terminal */
     cfg->savelines = s->savelines;
     cfg->dec_om = (s->term_flags & DEC_OM) != 0;

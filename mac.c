@@ -1,4 +1,4 @@
-/* $Id: mac.c,v 1.1.2.18 1999/03/27 15:39:45 ben Exp $ */
+/* $Id: mac.c,v 1.1.2.19 1999/03/28 02:06:10 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -59,6 +59,7 @@ struct mac_gestalts mac_gestalts;
 
 static void mac_startup(void);
 static void mac_eventloop(void);
+#pragma noreturn (mac_eventloop)
 static void mac_event(EventRecord *);
 static void mac_contentclick(WindowPtr, EventRecord *);
 static void mac_growwindow(WindowPtr, EventRecord *);
@@ -72,6 +73,7 @@ static void mac_adjustmenus(void);
 static void mac_closewindow(WindowPtr);
 static void mac_zoomwindow(WindowPtr, short);
 static void mac_shutdown(void);
+#pragma noreturn (mac_shutdown)
 
 struct mac_windows {
     WindowPtr terminal; /* XXX: Temporary */
@@ -86,6 +88,8 @@ int main (int argc, char **argv) {
     mac_startup();
     mac_eventloop();
 }
+
+#pragma noreturn (main)
 
 static void mac_startup(void) {
     Handle menuBar;
@@ -290,11 +294,17 @@ static int mac_windowtype(WindowPtr window) {
 static void mac_keypress(EventRecord *event) {
     WindowPtr window;
 
-    if (event->what == keyDown && (event->modifiers & cmdKey)) {
+    window = FrontWindow();
+    /*
+     * Check for a command-key combination, but ignore it if it counts
+     * as a meta-key combination and we're in a terminal window.
+     */
+    if (event->what == keyDown && (event->modifiers & cmdKey) &&
+	!((event->modifiers & cfg.meta_modifiers) == cfg.meta_modifiers &&
+	    mac_windowtype(window) == wTerminal)) {
 	mac_adjustmenus();
 	mac_menucommand(MenuKey(event->message & charCodeMask));
     } else {
-	window = FrontWindow();
 	switch (mac_windowtype(window)) {
 	  case wTerminal:
 	    mac_keyterm(window, event);

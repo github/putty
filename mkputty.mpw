@@ -1,9 +1,14 @@
+# $Id: mkputty.mpw,v 1.1.2.5 1999/03/28 02:06:11 ben Exp $
+
 Set program PuTTY
 Set makefile Makefile.mpw
 
 #	Run Make, then execute its output.
 
 Echo "# `Date -t` ----- Build of {program}."
+#if (`exists "#"Å"#"`)
+#	echo "# `Date -t` ----- Warning: auto-save file present."
+#end
 Echo "# `Date -t` ----- Analyzing dependencies."
 Begin
 	Echo "Set Echo 1"
@@ -17,12 +22,4 @@ Set type "`files -i -n -x t "{program}" ³ Dev:Null || Set Status 0`"
 Set CaseSensitive True #filetype check for DA must be case sensitive
 If "{type}" =~ /Å APPL/ OR "{type}" =~ /Å MPST/ 	# application or tool
 	Echo -n ¶t; Quote -n "{program}"; Echo -n " "
-Else If "{type}" =~ /Å DFIL/						# desk accessory in Suitcase
-	Echo -n ¶t
-	Quote -n "Font/DA Mover" "{SystemFolder}"System "{program}";
-	Echo -n "  # Install DA"
-Else If "{type}" =~ /Å dfil/						# desk accessory (System 7)
-	Echo -n ¶t
-	Quote -n Duplicate -y "{program}" "{SystemFolder}Apple Menu Items";
-	Echo -n "  # Install DA into Apple Menu"
 End

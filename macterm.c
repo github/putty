@@ -1,4 +1,4 @@
-/* $Id: macterm.c,v 1.1.2.29 1999/03/27 15:39:45 ben Exp $ */
+/* $Id: macterm.c,v 1.1.2.30 1999/03/28 02:06:10 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -41,6 +41,7 @@
 #include <QuickdrawText.h>
 #include <Resources.h>
 #include <Scrap.h>
+#include <Script.h>
 #include <Sound.h>
 #include <ToolUtils.h>
 
@@ -493,12 +494,39 @@ void mac_keyterm(WindowPtr window, EventRecord *event) {
     back->send((char *)buf, len);
 }
 
+static UInt32 mac_rekey(EventModifiers newmodifiers, UInt32 oldmessage) {
+    UInt32 transresult, state;
+    Ptr kchr;
+
+    state = 0;
+    kchr = (Ptr)GetScriptManagerVariable(smKCHRCache);
+    transresult = KeyTranslate(kchr,
+			       (oldmessage & keyCodeMask) >> 8 |
+			       newmodifiers & 0xff00,
+			       &state);
+    /*
+     * KeyTranslate returns two character codes.  We only worry about
+     * one.  Yes, this is slightly bogus, but it makes life less
+     * painful.
+     */
+    return oldmessage & ~charCodeMask | transresult & 0xff;
+}
+
+
 static int mac_keytrans(struct mac_session *s, EventRecord *event,
 			unsigned char *output) {
     unsigned char *p = output;
     int code;
 
     /* No meta key yet -- that'll be rather fun. */
+
+    /* Check if the meta "key" was held down */
+
+    if ((event->modifiers & cfg.meta_modifiers) == cfg.meta_modifiers) {
+	*p++ = '\033';
+	event->modifiers &= ~cfg.meta_modifiers;
+	event->message = mac_rekey(event->modifiers, event->message);
+    }
 
     /* Keys that we handle locally */
     if (event->modifiers & shiftKey) {
@@ -669,8 +697,8 @@ void mac_updateterm(WindowPtr window) {
 	       (*window->visRgn)->rgnBBox.right,
 	       (*window->visRgn)->rgnBBox.bottom);
     /* Restore default colours in case the Window Manager uses them */
-    PmForeColor(16);
-    PmBackColor(18);
+    PmForeColor(DEFAULT_FG);
+    PmBackColor(DEFAULT_BG);
     if (FrontWindow() != window)
 	EraseRect(&(*s->scrollbar)->contrlRect);
     UpdateControls(window, window->visRgn);

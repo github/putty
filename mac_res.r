@@ -1,4 +1,4 @@
-/* $Id: mac_res.r,v 1.1.2.13 1999/03/16 20:27:30 ben Exp $ */
+/* $Id: mac_res.r,v 1.1.2.14 1999/03/28 02:06:10 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -545,6 +545,7 @@ type 'pSET' {
     longint;			/* font_height */
     integer;			/* 'pltt' for colours */
     integer;			/* 'wORD' for wordness */
+    integer;			/* meta modifiers */
 };
 
 resource 'pSET' (PREF_settings, "settings", purgeable) {
@@ -576,6 +577,7 @@ resource 'pSET' (PREF_settings, "settings", purgeable) {
     PREF_pltt,			/* colours 'pltt' */
 #define PREF_wordness 1024
     PREF_wordness,		/* wordness 'wORD */
+    0x900,			/* meta modifiers (cmd+option) */
 };
 
 resource 'STR#' (PREF_strings, "strings", purgeable) {
@@ -688,6 +690,7 @@ resource 'TMPL' (128, "pSET") {
 	"Font size", 'DLNG',
 	"pltt ID", 'DWRD',
 	"wORD ID", 'DWRD',
+	"meta modifiers", 'HWRD',
     };
 };
 
