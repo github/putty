@@ -1,5 +1,5 @@
 Set program PuTTY
-Set makefile Makefile.mac
+Set makefile Makefile.mpw
 
 #	Run Make, then execute its output.
 
