@@ -1,4 +1,4 @@
-/* $Id: opentpt.c,v 1.1.2.1 1999/08/02 08:06:32 ben Exp $ */
+/* $Id: opentpt.c,v 1.1.2.2 1999/08/02 22:32:39 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -26,11 +26,12 @@
  */
 
 #include <MacTypes.h>
+#include <CodeFragments.h>
 #include <OpenTransport.h>
 #include <OpenTptInternet.h>
-#incldue <Processes.h>
 
-#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 
 #include "putty.h"
 
@@ -39,18 +40,19 @@
 struct otpt_socket {
     EndpointRef ep;
     Session *sess;
-    OTLIFO *sendq;
-    OTLIFO *eventq;
+    OTLIFO sendq;
+    OTLIFO eventq;
     long eventhandler;
 };
 
 struct otpt_netevent {
-    OTLink *next;
+    OTLink next;
     Net_Event_Type type;
 };
 
-static int otpt_probe(void);
-static void otpt_init(void);
+static int otpt_init(void);
+static void otpt_shutdown(void);
+static void otpt_poll(void);
 static void *otpt_open(Session *, char const *, int);
 static int otpt_recv(void *, void *, int, int);
 static int otpt_send(void *, void *, int, int);
@@ -65,11 +67,14 @@ Network_Stack otpt_stack = {
     otpt_destroy, otpt_shutdown
 };
 
-static OTConfiguration *otpt_config = kOTInvalidCOnfigurationPtr;
+static OTConfiguration *otpt_config = kOTInvalidConfigurationPtr;
 
 static int otpt_init(void) {
     OSErr err;
 
+    /* Check that the OpenTransport libraries were there (really just ppc) */
+    if (&InitOpenTransport == kUnresolvedCFragSymbolAddress)
+	return 1;
     err = InitOpenTransport();
     if (err != noErr)
 	return err;
@@ -107,7 +112,7 @@ static void *otpt_open(Session *sess, char const *host, int port) {
     err = OTInstallNotifier(s->ep, otpt_notifier, (void *)s);
     if (err != kOTNoError) goto splat;
     s->eventhandler = OTCreateSystemTask(&otpt_rcvevent, (void *)s);
-    if (s->eventhandler = 0) goto splat;
+    if (s->eventhandler == 0) goto splat;
 
     /* Bind to any local address */
     err = OTBind(s->ep, NULL, NULL);
@@ -116,7 +121,8 @@ static void *otpt_open(Session *sess, char const *host, int port) {
     remoteaddr = smalloc(sizeof(*remoteaddr) - sizeof(remoteaddr->fName) +
 			 strlen(host) + 7); /* allow space for port no. */
     remote.addr.buf = (UInt8 *)remoteaddr;
-    remote.addr.len = OTInitDNSAddress(remoteaddr, host);
+    /* XXX: I don't _think_ OTInitDNSAddress can modify the hostname. */
+    remote.addr.len = OTInitDNSAddress(remoteaddr, (char *)host);
     remote.addr.len += sprintf(&remoteaddr->fName[strlen(remoteaddr->fName)],
 			       ":%d", port);
     /* Asynchronous blocking mode, so we don't have to wait */
@@ -137,14 +143,14 @@ static void *otpt_open(Session *sess, char const *host, int port) {
 static int otpt_recv(void *sock, void *buf, int buflen, int flags) {
     struct otpt_socket *s = (struct otpt_socket *)sock;
     OTResult result;
-    OTFlags flags;
+    OTFlags otflags;
 
     OTSetNonBlocking(s->ep);
     OTSetSynchronous(s->ep);
-    result = OTRcv(s->ep, buf, buflen, flags);
+    result = OTRcv(s->ep, buf, buflen, &otflags);
     if (result >= 0)
 	return result;
-    else if (result == kOTNoDataError)
+    else if (result == kOTNoDataErr)
 	return 0;
     else /* confusion! */
 	return 0;
@@ -203,9 +209,9 @@ static void otpt_destroy(void *sock) {
 	OTDestroySystemTask(s->eventhandler);
 
     /* Flush the event and send queues */
-    while ((link = OTLIFODequeue(s->eventq)) != NULL)
+    while ((link = OTLIFODequeue(&s->eventq)) != NULL)
 	OTFreeMem(link);
-    while ((link = OTLIFODequeue(s->sendq)) != NULL)
+    while ((link = OTLIFODequeue(&s->sendq)) != NULL)
 	OTFreeMem(link);
 
     /* Finally, free the socket record itself */
@@ -302,13 +308,11 @@ static pascal void otpt_rcvevent(void *arg) {
     OTLink *link;
     struct otpt_netevent *ne;
 
-    /* idiom stolen from "Networking With Open Transport".  Blame Apple. */
-
-    while ((link = OTLIFOStealList(s->eventq)) != NULL) {
+    while ((link = OTLIFOStealList(&s->eventq)) != NULL) {
 	link = OTReverseList(link);
 	while (link != NULL) {
 	    ne = (struct otpt_netevent *)link;
-	    link = ne->next;
+	    link = ne->next.fNext;
 	    switch (ne->type) {
 	      default:
 		(s->sess->back->msg)(s->sess, s, ne->type);
@@ -317,7 +321,7 @@ static pascal void otpt_rcvevent(void *arg) {
 	    OTFreeMem(ne);
 	}
     }
-    
+}    
 
 /*
  * Local Variables:

@@ -10,6 +10,9 @@
 #include <Gestalt.h>
 #include <MacWindows.h>
 
+/* config.h or somesuch? */
+#define WITH_OPENTRANSPORT
+
 struct mac_gestalts {
     long qdvers;
     long apprvers;
@@ -36,7 +39,7 @@ extern void mac_loadconfig(Config *);
 /* from macnet.c */
 extern void macnet_eventcheck(void);
 /* from opentpt.c */
-extern void opentpt_shutdown(void);
+extern Network_Stack otpt_stack;
 
 #endif
 

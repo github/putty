@@ -1,4 +1,4 @@
-/* $Id: mac.c,v 1.1.2.25 1999/08/02 08:04:31 ben Exp $ */
+/* $Id: mac.c,v 1.1.2.26 1999/08/02 22:32:38 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -148,13 +148,13 @@ static void mac_startup(void) {
 
     /* Initialise networking */
 #ifdef WITH_OPENTRANSPORT
-    if ((*opentpt_stack.init)() == 0)
-	net_stack = &opentpt_stack;
+    if ((*otpt_stack.init)() == 0)
+	net_stack = &otpt_stack;
     else 
 #endif
 #ifdef WITH_MACTCP
-    if ((*mactcp_stack.init)() == 0)
-	net_stack = &mactcp_stack;
+    if ((*mtcp_stack.init)() == 0)
+	net_stack = &mtcp_stack;
     else
 #endif
 	fatalbox("No useful TCP/IP stack found");
