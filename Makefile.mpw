@@ -1,4 +1,4 @@
-# $Id: Makefile.mpw,v 1.1.2.9 1999/04/02 10:21:48 ben Exp $
+# $Id: Makefile.mpw,v 1.1.2.10 1999/04/02 12:56:57 ben Exp $
 # This is the Makefile for building PuTTY for the Mac OS.
 # Users of non-Mac systems will see some pretty strange characters around.
 
@@ -98,7 +98,7 @@ PuTTY.68k ÄÄ {Objects¥68K} {Libs¥68K}
 			{Libs¥68K}
 	END
 
-PuTTY.68k ÄÄ PuTTY.rsrc
+PuTTY.68k ÄÄ PuTTY.rsrc version.r version.h
 	Echo 'Include "PuTTY.rsrc";' > merge.r
 	Rez merge.r -o {Targ} -append
 	Delete -i merge.r
