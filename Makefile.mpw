@@ -1,4 +1,4 @@
-# $Id: Makefile.mpw,v 1.1.2.7 1999/03/29 23:55:06 ben Exp $
+# $Id: Makefile.mpw,v 1.1.2.8 1999/04/01 21:25:06 ben Exp $
 # This is the Makefile for building PuTTY for the Mac OS.
 # Users of non-Mac systems will see some pretty strange characters around.
 
@@ -93,15 +93,22 @@ PuTTY ÄÄ {Objects¥68K} {Libs¥68K}
 			{Libs¥68K}
 	END
 
-PuTTY ÄÄ {¥MondoBuild¥} mac_res.r macresid.h
+PuTTY ÄÄ mac_res.r macresid.h
 	Rez mac_res.r -o {Targ} {Includes} -append
+
+PuTTY ÄÄ version.r version.h
+	Rez mac_res.r -d BUILD_ARCH='"68k"' -o {Targ} {Includes} -append
 
 PuTTY.ppc ÄÄ {¥MondoBuild¥} mac_res.r macresid.h
 	Rez mac_res.r -o {Targ} {Includes} -append
 
-PuTTY.fat Ä PuTTY PuTTY.ppc
+PuTTY.ppc ÄÄ version.r version.h
+	Rez mac_res.r -d BUILD_ARCH='"PowerPC"' -o {Targ} {Includes} -append
+
+PuTTY.fat Ä PuTTY PuTTY.ppc version.r version.h
 	Duplicate -y PuTTY PuTTY.fat
 	MergeFragment PuTTY.ppc PuTTY.fat
+	Rez mac_res.r -d BUILD_ARCH='"fat"' -o {Targ} {Includes} -append
 
 .c.o Ä .c
 	{C} {default}.c -o {Targ} {COptions}
