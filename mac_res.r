@@ -1,4 +1,4 @@
-/* $Id: mac_res.r,v 1.1.2.10 1999/03/13 18:22:47 ben Exp $ */
+/* $Id: mac_res.r,v 1.1.2.11 1999/03/14 15:50:19 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -587,6 +587,8 @@ resource 'TMPL' (128, "pSET") {
 	"Host STR# index", 'DWRD',
 	"Port", 'DLNG',
 	"Protocol", 'DLNG',
+	"Termtype STR# ID", 'DWRD',
+	"Termtype STR# index", 'DWRD',
 	"Termspeed STR# ID", 'DWRD',
 	"Termspeed STR# index", 'DWRD',
 	"Environ STR# ID", 'DWRD',
