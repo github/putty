@@ -70,6 +70,8 @@ typedef HDC Context;
 #define GLOBAL extern
 #endif
 
+GLOBAL unsigned long attr_mask;
+
 GLOBAL int rows, cols, savelines;
 
 GLOBAL int font_width, font_height;

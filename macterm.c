@@ -1,4 +1,4 @@
-/* $Id: macterm.c,v 1.1.2.21 1999/03/14 15:51:34 ben Exp $ */
+/* $Id: macterm.c,v 1.1.2.22 1999/03/14 17:43:35 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -77,6 +77,7 @@ static void mac_initpalette(struct mac_session *);
 static void mac_adjustsize(struct mac_session *, int, int);
 static pascal void mac_scrolltracker(ControlHandle, short);
 static pascal void do_text_for_device(short, short, GDHandle, long);
+static pascal void mac_set_attr_mask(short, short, GDHandle, long);
 static int mac_keytrans(struct mac_session *, EventRecord *, unsigned char *);
 static void text_click(struct mac_session *, EventRecord *);
 
@@ -138,6 +139,7 @@ void mac_newsession(void) {
     term_size(cfg.height, cfg.width, cfg.savelines);
     mac_initfont(s);
     mac_initpalette(s);
+    attr_mask = ATTR_MASK;
     /* Set to FALSE to not get palette updates in the background. */
     SetPalette(s->window, s->palette, TRUE); 
     ActivatePalette(s->window);
@@ -560,6 +562,7 @@ void mac_updateterm(WindowPtr window) {
 
     s = (struct mac_session *)GetWRefCon(window);
     BeginUpdate(window);
+    get_ctx();
     term_paint(s,
 	       (*window->visRgn)->rgnBBox.left,
 	       (*window->visRgn)->rgnBBox.top,
@@ -577,6 +580,7 @@ void mac_updateterm(WindowPtr window) {
     DrawGrowIcon(window);
     clip.left = SHRT_MIN;
     ClipRect(&clip);
+    free_ctx(NULL);
     EndUpdate(window);
 }
 
@@ -641,10 +645,7 @@ static pascal void do_text_for_device(short depth, short devflags,
 
     bright = (a->attr & ATTR_BOLD) && cfg.bold_colour;
 
-    if (a->attr & ATTR_REVERSE)
-	TextMode(notSrcCopy);
-    else
-	TextMode(srcCopy);
+    TextMode(a->attr & ATTR_REVERSE ? notSrcCopy : srcCopy);
 
     switch (depth) {
       case 1:
@@ -652,7 +653,7 @@ static pascal void do_text_for_device(short depth, short devflags,
 	ForeColor(whiteColor);
 	BackColor(blackColor);
 	if (a->attr & ATTR_ACTCURS)
-	    TextMode((a->attr & ATTR_REVERSE) ? srcCopy : notSrcCopy);
+	    TextMode(a->attr & ATTR_REVERSE ? srcCopy : notSrcCopy);
 	break;
       case 2:
 	if (a->attr & ATTR_ACTCURS) {
@@ -666,7 +667,7 @@ static pascal void do_text_for_device(short depth, short devflags,
 	break;
       default:
 	if (a->attr & ATTR_ACTCURS) {
-	    fgcolour = (bright ? CURSOR_FG_BOLD : CURSOR_FG);
+	    fgcolour = bright ? CURSOR_FG_BOLD : CURSOR_FG;
 	    bgcolour = CURSOR_BG;
 	    TextMode(srcCopy);
 	} else {
@@ -702,10 +703,32 @@ static pascal void do_text_for_device(short depth, short devflags,
 
 /*
  * Call from the terminal emulator to get its graphics context.
+ * Should probably be called start_redraw or something.
  */
 struct mac_session *get_ctx(void) {
+    struct mac_session *s = onlysession;
 
-    return onlysession;
+    attr_mask = ATTR_INVALID;
+    DeviceLoop(s->window->visRgn, mac_set_attr_mask, (long)s, 0);
+    return s;
+}
+
+static pascal void mac_set_attr_mask(short depth, short devflags,
+				     GDHandle device, long cookie) {
+
+    switch (depth) {
+      default:
+	attr_mask |= ATTR_FGMASK | ATTR_BGMASK;
+	/* FALLTHROUGH */
+      case 2:
+	attr_mask |= ATTR_BOLD;
+	/* FALLTHROUGH */
+      case 1:
+	attr_mask |= ATTR_UNDER | ATTR_REVERSE | ATTR_ACTCURS |
+	    ATTR_PASCURS | ATTR_ASCII | ATTR_GBCHR | ATTR_LINEDRW |
+	    (cfg.bold_colour ? 0 : ATTR_BOLD); 
+	break;
+    }
 }
 
 /*

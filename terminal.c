@@ -1242,7 +1242,7 @@ static void do_paint (Context ctx, int may_optimise){
 	    unsigned long t = wanttext[idx];
 	    int needs_update = (j < cols && t != disptext[idx]);
 	    int keep_going = (start != -1 && needs_update &&
-			      (t & ATTR_MASK) == attr &&
+			      (t & attr_mask) == attr &&
 			      j-start < sizeof(ch));
 	    if (start != -1 && !keep_going) {
 		do_text (ctx, start, i, ch, j-start, attr);
@@ -1251,7 +1251,7 @@ static void do_paint (Context ctx, int may_optimise){
 	    if (needs_update) {
 		if (start == -1) {
 		    start = j;
-		    attr = t & ATTR_MASK;
+		    attr = t & attr_mask;
 		}
 		ch[j-start] = (char) (t & CHAR_MASK);
 	    }
