@@ -1,4 +1,4 @@
-/* $Id: macnet.c,v 1.1.2.3 1999/04/04 18:23:34 ben Exp $ */
+/* $Id: macnet.c,v 1.1.2.4 1999/04/06 23:18:49 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -75,7 +75,9 @@ typedef struct Socket {
     int port;
     ProcessSerialNumber psn;
     Session *s;
+#if TARGET_CPU_68K && !TARGET_RT_CFM
     long a5;
+#endif
     QHdr sendq; /* Blocks waiting to be sent */
 } Socket;
 
@@ -132,11 +134,13 @@ static RoutineDescriptor macnet_completed_close_upp =
 static RoutineDescriptor macnet_asr_upp =
     BUILD_ROUTINE_DESCRIPTOR(uppTCPNotifyProcInfo, (ProcPtr)macnet_asr);
 #else
-#define macnet_resolved_upp macnet_resolved
-#define macnet_completed_open_upp macnet_completed_open
-#define macnet_completed_send_upp macnet_completed_send
-#define macnet_completed_close_upp macnet_completed_close
-#define macnet_asr_upp macnet_asr
+/* These handle A5 switching to thwart the optimiser. */
+static pascal void macnet_resolved_upp(hostInfo *, char *);
+static void macnet_completed_open_upp(TCPiopb *);
+static void macnet_completed_send_upp(TCPiopb *);
+static void macnet_completed_close_upp(TCPiopb *);
+static pascal void macnet_asr_upp(StreamPtr, unsigned short, Ptr,
+				  unsigned short, ICMPReport *);
 #endif
 
 /*
@@ -155,6 +159,7 @@ static OSErr macnet_init(void) {
     /*
      * FIXME: This is hideously broken, in that we're meant to faff
      * with unit numbers and stuff, and we blatantly don't.
+     * On the other hand, neither does NCSA Telnet.  Hmm.
      */
     err = opendriver(".IPP", &mtcp_refnum);
     if (err != noErr)
@@ -162,8 +167,7 @@ static OSErr macnet_init(void) {
     err = OpenResolver(NULL);
     if (err != noErr)
 	return err;
-    /* Set up the event queues, and fill the free queue with events 
-     */
+    /* Set up the event queues, and fill the free queue with events */
     macnet_eventq.qFlags = 0;
     macnet_eventq.qHead = macnet_eventq.qTail = NULL;
     macnet_freeq.qFlags = 0;
@@ -192,7 +196,9 @@ Socket *net_open(Session *s, char *host, int port) {
     /* Make a note of anything we don't want to forget */
     sock->port = port;
     GetCurrentProcess(&sock->psn);
+#if TARGET_CPU_68K && !TARGET_RT_CFM
     sock->a5 = SetCurrentA5();
+#endif
 
     /* Get MacTCP running if it's not already */
     if (!mtcp_initted)
@@ -201,6 +207,7 @@ Socket *net_open(Session *s, char *host, int port) {
 
     /* Get ourselves a TCP stream to play with */
     sock->iopb.ioCRefNum = mtcp_refnum;
+    sock->iopb.ioCompletion = NULL;
     sock->iopb.csCode = TCPCreate;
     sock->iopb.csParam.create.rcvBuff = tcpbuf;
     sock->iopb.csParam.create.rcvBuffLen = TCPBUF_SIZE;
@@ -209,24 +216,33 @@ Socket *net_open(Session *s, char *host, int port) {
     /* This could be done asynchronously, but I doubt it'll take long. */
     err = PBControlSync((ParmBlkPtr)&sock->iopb);
     if (err != noErr)
-	fatalbox("TCP stream open failed (%d)", err);
+	fatalbox("TCP stream create failed (%d)", err);
 
     err = StrToAddr(host, &sock->hostinfo, &macnet_resolved_upp, (char *)sock);
-    if (err != noErr)
-	fatalbox("Host lookup failed (%d)", err);
-    if (sock->hostinfo.rtnCode != cacheFault)
+    /*
+     * A cache fault indicates that the DNR will call us back when
+     * it's found the host for us.
+     */
+    if (err != cacheFault)
 	macnet_resolved(&sock->hostinfo, (char *)sock);
     return sock;
 }
 
-static pascal void macnet_resolved(hostInfo *hi, char *cookie) {
+#if TARGET_CPU_68K && !TARGET_RT_CFM
+static pascal void macnet_resolved_upp(hostInfo *hi, char *cookie) {
     Socket *sock = (Socket *)cookie;
-    OSErr err;
-#if !TARGET_RT_CFM
     long olda5;
 
     olda5 = SetA5(sock->a5);
+    macnet_resolved(hi, cookie);
+    SetA5(olda5);
+}
 #endif
+
+static pascal void macnet_resolved(hostInfo *hi, char *cookie) {
+    Socket *sock = (Socket *)cookie;
+    OSErr err;
+
     /*
      * We've resolved a name, so now we'd like to connect to it (or
      * report an error).
@@ -236,19 +252,17 @@ static pascal void macnet_resolved(hostInfo *hi, char *cookie) {
 	/* Open a connection */
 	sock->iopb.ioCompletion = macnet_completed_open_upp;
 	sock->iopb.csCode = TCPActiveOpen;
+	memset(&sock->iopb.csParam, 0, sizeof(sock->iopb.csParam));
 	sock->iopb.csParam.open.validityFlags = typeOfService;
-	sock->iopb.csParam.open.commandTimeoutValue = 0; /* unused */
 	sock->iopb.csParam.open.remoteHost = sock->hostinfo.addr[0]; /*XXX*/
 	sock->iopb.csParam.open.remotePort = sock->port;
-	/* localHost is set by MacTCP. */
-	sock->iopb.csParam.open.localPort = 0;
 	sock->iopb.csParam.open.tosFlags = lowDelay;
 	sock->iopb.csParam.open.dontFrag = 0;
 	sock->iopb.csParam.open.timeToLive = 0; /* default */
 	sock->iopb.csParam.open.security = 0;
 	sock->iopb.csParam.open.optionCnt = 0;
 	sock->iopb.csParam.open.userDataPtr = (char *)sock;
-	err = PBControlSync((ParmBlkPtr)&sock->iopb);
+	err = PBControlAsync((ParmBlkPtr)&sock->iopb);
 	if (err != noErr)
 	    macnet_sendevent(sock, NE_NOOPEN);
 	break;
@@ -256,18 +270,22 @@ static pascal void macnet_resolved(hostInfo *hi, char *cookie) {
 	macnet_sendevent(sock, NE_NOHOST);
 	break;
     }
-#if !TARGET_RT_CFM
-    SetA5(olda5);
-#endif
 }
 
-static void macnet_completed_open(TCPiopb *iopb) {
+#if TARGET_CPU_68K && !TARGET_RT_CFM
+static void macnet_completed_open_upp(TCPiopb *iopb) {
     Socket *sock = (Socket *)iopb->csParam.open.userDataPtr;
-#if !TARGET_RT_CFM
     long olda5;
 
     olda5 = SetA5(sock->a5);
+    macnet_completed_open(iopb);
+    SetA5(olda5);
+}
 #endif
+
+static void macnet_completed_open(TCPiopb *iopb) {
+    Socket *sock = (Socket *)iopb->csParam.open.userDataPtr;
+
     switch (iopb->ioResult) {
       case noErr:
 	macnet_sendevent(sock, NE_OPEN);
@@ -276,20 +294,27 @@ static void macnet_completed_open(TCPiopb *iopb) {
 	macnet_sendevent(sock, NE_NOOPEN);
 	break;
     }
-#if !TARGET_RT_CFM
-    SetA5(olda5);
-#endif
 }
+
+#if TARGET_CPU_68K && !TARGET_RT_CFM
+static pascal void macnet_asr_upp(StreamPtr tcpstream,
+				  unsigned short eventcode, Ptr cookie,
+				  unsigned short terminreason, 
+				  ICMPReport *icmpmsg) {
+    Socket *sock = (Socket *)cookie;
+    long olda5;
+
+    olda5 = SetA5(sock->a5);
+    macnet_asr(tcpstream, eventcode, cookie, terminreason, icmpmsg);
+    SetA5(olda5);
+}
+#endif
 
 static pascal void macnet_asr(StreamPtr tcpstream, unsigned short eventcode,
 			      Ptr cookie, unsigned short terminreason,
 			      ICMPReport *icmpmsg) {
     Socket *sock = (Socket *)cookie;
-#if !TARGET_RT_CFM
-    long olda5;
 
-    olda5 = SetA5(sock->a5);
-#endif
     switch (eventcode) {
       case TCPClosing:
 	macnet_sendevent(sock, NE_CLOSING);
@@ -321,9 +346,6 @@ static pascal void macnet_asr(StreamPtr tcpstream, unsigned short eventcode,
 	}
 	break;
     }
-#if !TARGET_RT_CFM
-    SetA5(olda5);
-#endif
 }
 
 /*
@@ -395,7 +417,9 @@ static void macnet_startsend(Socket *sock) {
     OSErr err;
 
     buff = (Send_Buffer *)sock->sendq.qHead;
+    sock->iopb.ioCompletion = macnet_completed_send_upp;
     sock->iopb.csCode = TCPSend;
+    memset(&sock->iopb.csParam, 0, sizeof(sock->iopb.csParam));
     sock->iopb.csParam.send.validityFlags = 0;
     sock->iopb.csParam.send.pushFlag = buff->flags & SEND_PUSH ? true : false;
     sock->iopb.csParam.send.urgentFlag = buff->flags & SEND_URG ? true : false;
@@ -404,15 +428,45 @@ static void macnet_startsend(Socket *sock) {
     err = PBControlAsync((ParmBlkPtr)&sock->iopb);
 }
 
+#if TARGET_CPU_68K && !TARGET_RT_CFM
+static void macnet_completed_send_upp(TCPiopb *iopb) {
+    Socket *sock = (Socket *)iopb->csParam.send.userDataPtr;
+    long olda5;
+
+    olda5 = SetA5(sock->a5);
+    macnet_completed_send(iopb);
+    SetA5(olda5);
+}
+#endif
+
+static void macnet_completed_send(TCPiopb *iopb) {
+    Socket *sock = (Socket *)iopb->csParam.send.userDataPtr;
+
+    switch (iopb->ioResult) {
+      case noErr:
+	macnet_sendevent(sock, NE_SENT);
+	break;
+      case connectionClosing:
+      case connectionTerminated:
+	/* We'll get an ASR, so ignore it here. */
+	break;
+      default:
+	macnet_sendevent(sock, NE_DIED);
+	break;
+    }
+}
+
+
 int net_recv(Socket *sock, void *buf, int buflen, int flags) {
     TCPiopb iopb;
     OSErr err;
     int avail, want, got;
 
     memcpy(&iopb, &sock->iopb, sizeof(TCPiopb));
-    /* Work out if there's anything to recieve (we don't want to block) 
- */
+    /* Work out if there's anything to recieve (we don't want to block)  */
+    iopb.ioCompletion = NULL;
     iopb.csCode = TCPStatus;
+    memset(&sock->iopb.csParam, 0, sizeof(sock->iopb.csParam));
     err = PBControlSync((ParmBlkPtr)&iopb);
     if (err != noErr)
 	return 0; /* macnet_asr should catch it anyway */
@@ -420,7 +474,9 @@ int net_recv(Socket *sock, void *buf, int buflen, int flags) {
     if (avail == 0)
 	return 0;
     want = avail < buflen ? avail : buflen;
+    iopb.ioCompletion = NULL;
     iopb.csCode = TCPRcv;
+    memset(&sock->iopb.csParam, 0, sizeof(sock->iopb.csParam));
     iopb.csParam.receive.rcvBuff = buf;
     iopb.csParam.receive.rcvBuffLen = want;
     err = PBControlSync((ParmBlkPtr)&iopb);
@@ -440,6 +496,7 @@ void net_close(Socket *sock) {
      * free it, which we can't do at interrupt time).
      */
     memcpy(&sock->spareiopb, &sock->iopb, sizeof(TCPiopb));
+    memset(&sock->spareiopb.csParam, 0, sizeof(sock->spareiopb.csParam));
     sock->spareiopb.ioCompletion = macnet_completed_close_upp;
     sock->spareiopb.csCode = TCPClose;
     sock->spareiopb.csParam.close.validityFlags = 0;
@@ -456,13 +513,20 @@ void net_close(Socket *sock) {
     }
 }
 
-static void macnet_completed_close(TCPiopb* iopb) {
+#if TARGET_CPU_68K && !TARGET_RT_CFM
+static void macnet_completed_close_upp(TCPiopb* iopb) {
     Socket *sock = (Socket *)iopb->csParam.close.userDataPtr;
-#if !TARGET_RT_CFM
     long olda5;
 
     olda5 = SetA5(sock->a5);
+    macnet_completed_close(iopb);
+    SetA5(olda5);
+}
 #endif
+
+static void macnet_completed_close(TCPiopb* iopb) {
+    Socket *sock = (Socket *)iopb->csParam.close.userDataPtr;
+
     switch (iopb->ioResult) {
       case noErr:
 	macnet_sendevent(sock, NE_CLOSED);
@@ -474,9 +538,6 @@ static void macnet_completed_close(TCPiopb* iopb) {
 	macnet_sendevent(sock, NE_DIED);
 	break;
     }
-#if !TARGET_RT_CFM
-    SetA5(olda5);
-#endif
 }
 
 /*
@@ -493,7 +554,9 @@ void net_destroy(Socket *sock) {
      * synchronous, so we can allocate this one dynamically.
      */
     memcpy(&iopb, &sock->iopb, sizeof(TCPiopb));
+    iopb.ioCompletion = NULL;
     iopb.csCode = TCPRelease;
+    memset(&iopb.csParam, 0, sizeof(iopb.csParam));
     err = PBControlSync((ParmBlkPtr)&iopb);
     sfree(iopb.csParam.create.rcvBuff);
     sfree(sock);
@@ -503,7 +566,7 @@ static void macnet_sendevent(Socket *sock, Net_Event_Type type) {
     NetEvent *ne;
 
     ne = (NetEvent *)macnet_freeq.qHead;
-    assert (ne != NULL);
+    if (ne == NULL) return; /* It's a disaster, but how do we tell anyone? */
     Dequeue(&ne->qelem, &macnet_freeq);
     ne->sock = sock;
     ne->type = type;

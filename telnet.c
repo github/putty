@@ -9,6 +9,10 @@
 
 #include "putty.h"
 
+#ifdef macintosh
+#pragma segment Telnet
+#endif
+
 static SOCKET s = INVALID_SOCKET;
 /* kludge till we decide where to put telnet state */
 static Session *sess;
@@ -479,6 +483,10 @@ static char *telnet_init (Session *this_sess) {
     sess = this_sess;
     s = net_open(sess, sess->cfg.host, sess->cfg.port);
 
+    return NULL;
+}
+
+static void telnet_opened(Session *sess) {
     /*
      * Initialise option states.
      */
@@ -496,8 +504,6 @@ static char *telnet_init (Session *this_sess) {
      */
     in_synch = FALSE;
 #endif
-
-    return NULL;
 }
 
 /*
@@ -512,6 +518,9 @@ static int telnet_msg (Session *sess, SOCKET sock, Net_Event_Type ne) {
 	return -5000;
 
     switch (ne) {
+      case NE_OPEN:
+	telnet_opened(sess);
+	return 1;
       case NE_DATA:
 	ret = net_recv(s, buf, sizeof(buf), 0);
 	if (ret < 0)		       /* any _other_ error */
@@ -548,6 +557,18 @@ static int telnet_msg (Session *sess, SOCKET sock, Net_Event_Type ne) {
       case NE_CLOSING:
 	s = INVALID_SOCKET;
 	return 0;
+      case NE_NOHOST:
+	fatalbox("Host not found");
+      case NE_REFUSED:
+	fatalbox("Connection refused");
+      case NE_NOOPEN:
+	fatalbox("Unable to open connection");
+      case NE_TIMEOUT:
+	fatalbox("Connection timed out");
+      case NE_ABORT:
+	fatalbox("Connection reset by peer");
+      case NE_DIED:
+	fatalbox("Connection died");
     }
     return 1;			       /* shouldn't happen, but WTF */
 }
