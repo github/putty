@@ -325,7 +325,7 @@ static void update_sbar(void) {
 
 /*
  * Check whether the region bounded by the two pointers intersects
- * the scroll region, and de-select the on-screen selection if so.
+ * the selection, and de-select the on-screen selection if so.
  */
 static void check_selection (unsigned long *from, unsigned long *to) {
     if (from < selend && selstart < to)
@@ -1425,65 +1425,71 @@ void term_mouse (Mouse_Button b, Mouse_Action a, int x, int y) {
 	    selend = selpoint + 1;
 	}
 	sel_spread();
-    } else if ((b == MB_SELECT || b == MB_EXTEND) && a == MA_RELEASE) {
+    } else if ((b == MB_SELECT || b == MB_EXTEND) && a == MA_RELEASE)
 	if (selstate == DRAGGING) {
-	    /*
-	     * We've completed a selection. We now transfer the
-	     * data to the clipboard.
-	     */
-	    unsigned char *p = selspace;
-	    unsigned long *q = selstart;
-
-	    while (q < selend) {
-		int nl = FALSE;
-		unsigned long *lineend = q - (q-text) % (cols+1) + cols;
-		unsigned long *nlpos = lineend;
-
-		if (!(*nlpos & ATTR_WRAPPED)) {
-		    while ((nlpos[-1] & CHAR_MASK) == 0x20 && nlpos > q)
-			nlpos--;
-		    if (nlpos < selend)
-			nl = TRUE;
-		}
-		while (q < nlpos && q < selend)
-		    *p++ = (unsigned char) (*q++ & CHAR_MASK);
-		if (nl) {
-		    int i;
-		    for (i=0; i<sizeof(sel_nl); i++)
-			*p++ = sel_nl[i];
-		}
-		q = lineend + 1;       /* start of next line */
-	    }
-	    write_clip (selspace, p - selspace);
+	    term_copy();
 	    selstate = SELECTED;
 	} else
 	    selstate = NO_SELECTION;
-    } else if (b == MB_PASTE && (a==MA_CLICK || a==MA_2CLK || a==MA_3CLK)) {
-	char *data;
-	int len;
-
-	get_clip((void **) &data, &len);
-	if (data) {
-	    char *p, *q;
-	    p = q = data;
-	    while (p < data+len) {
-		while (p < data+len &&
-		       !(p <= data+len-sizeof(sel_nl) &&
-			 !memcmp(p, sel_nl, sizeof(sel_nl))))
-		    p++;
-		back->send (q, p-q);
-		if (p <= data+len-sizeof(sel_nl) &&
-		    !memcmp(p, sel_nl, sizeof(sel_nl))) {
-		    back->send ("\015", 1);
-		    p += sizeof(sel_nl);
-		}
-		q = p;
-	    }
-	}
-	get_clip(NULL, NULL);
-    }
-
+    else if (b == MB_PASTE && (a==MA_CLICK || a==MA_2CLK || a==MA_3CLK))
+	term_paste();
     term_update();
+}
+
+/*
+ * We've completed a selection. We now transfer the
+ * data to the clipboard.
+ */
+void term_copy() {
+    unsigned char *p = selspace;
+    unsigned long *q = selstart;
+
+    while (q < selend) {
+	int nl = FALSE;
+	unsigned long *lineend = q - (q-text) % (cols+1) + cols;
+	unsigned long *nlpos = lineend;
+
+	if (!(*nlpos & ATTR_WRAPPED)) {
+	    while ((nlpos[-1] & CHAR_MASK) == 0x20 && nlpos > q)
+		nlpos--;
+	    if (nlpos < selend)
+		nl = TRUE;
+	}
+	while (q < nlpos && q < selend)
+	    *p++ = (unsigned char) (*q++ & CHAR_MASK);
+	if (nl) {
+	    int i;
+	    for (i=0; i<sizeof(sel_nl); i++)
+		*p++ = sel_nl[i];
+	}
+	q = lineend + 1;       /* start of next line */
+    }
+    write_clip (selspace, p - selspace);
+}
+
+void term_paste() {
+    char *data;
+    int len;
+
+    get_clip((void **) &data, &len);
+    if (data) {
+	char *p, *q;
+	p = q = data;
+	while (p < data+len) {
+	    while (p < data+len &&
+		   !(p <= data+len-sizeof(sel_nl) &&
+		     !memcmp(p, sel_nl, sizeof(sel_nl))))
+		p++;
+	    back->send (q, p-q);
+	    if (p <= data+len-sizeof(sel_nl) &&
+		!memcmp(p, sel_nl, sizeof(sel_nl))) {
+		back->send ("\015", 1);
+		p += sizeof(sel_nl);
+	    }
+	    q = p;
+	}
+    }
+    get_clip(NULL, NULL);
 }
 
 static void deselect (void) {
