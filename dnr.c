@@ -48,8 +48,8 @@
 #include <Traps.h>
 #endif
 
-#ifndef __GESTALTEQU__
-#include <GestaltEqu.h>
+#ifndef __GESTALT__
+#include <Gestalt.h>
 #endif
 
 #ifndef __FOLDERS__
@@ -99,7 +99,7 @@ static ProcPtr			gDNRCodePtr = nil;
 ** of the trap table by asking if the address of trap $A86E is the same as
 ** $AA6E. */
 
-#pragma segment UtilMain
+/* #pragma segment UtilMain */
 short	NumToolboxTraps(void)
 {
 	if (NGetTrapAddress(_InitGraf, ToolTrap) == NGetTrapAddress(0xAA6E, ToolTrap))
@@ -108,7 +108,7 @@ short	NumToolboxTraps(void)
 		return(0x400);
 }
 
-#pragma segment UtilMain
+/* #pragma segment UtilMain */
 TrapType	GetTrapType(short theTrap)
 {
 	/* OS traps start with A0, Tool with A8 or AA. */
@@ -263,7 +263,8 @@ OSErr OpenResolver(char *fileName)
 	/* call open resolver */
 	// RRK modification 1/95 use CallOpenResolverProc define to call UPP
 	
-	rc = CallOpenResolverProc(gDNRCodePtr, OPENRESOLVER, fileName);
+	rc = CallOpenResolverProc((OpenResolverUPP)gDNRCodePtr, OPENRESOLVER,
+				  fileName);
 	if (rc != noErr) 
 	{
 		/* problem with open resolver, flush it */
@@ -286,7 +287,7 @@ OSErr CloseResolver(void)
 	// RRK modification 1/95 use CallCloseResolverProc define to call UPP
 	// (void) (*dnr)(CLOSERESOLVER);
 
-	CallCloseResolverProc(gDNRCodePtr, CLOSERESOLVER);
+	CallCloseResolverProc((CloseResolverUPP)gDNRCodePtr, CLOSERESOLVER);
 	
 	/* release the DNR resource package */
 	HUnlock(gDNRCodeHndl);
@@ -308,7 +309,7 @@ OSErr StrToAddr(char *hostName, struct hostInfo *rtnStruct,
 	// RRK modification 1/95 use CallStrToAddrProc define to call UPP
 	// return((*dnr)(STRTOADDR, hostName, rtnStruct, resultproc, userDataPtr));
 			
-	return (CallStrToAddrProc(gDNRCodePtr, STRTOADDR, hostName, rtnStruct, resultproc, userDataPtr));
+	return (CallStrToAddrProc((StrToAddrUPP)gDNRCodePtr, STRTOADDR, hostName, rtnStruct, resultproc, userDataPtr));
 }
 	
 OSErr AddrToStr(unsigned long addr, char *addrStr)
@@ -321,7 +322,7 @@ OSErr AddrToStr(unsigned long addr, char *addrStr)
 	// RRK modification 1/95 use CallAddrToStrProc define to call UPP
 	// (*dnr)(ADDRTOSTR, addr, addrStr);
 	
-	err = CallAddrToStrProc(gDNRCodePtr, ADDRTOSTR, addr, addrStr);
+	err = CallAddrToStrProc((AddrToStrUPP)gDNRCodePtr, ADDRTOSTR, addr, addrStr);
 	return(noErr);
 }
 	
@@ -335,7 +336,7 @@ OSErr EnumCache(EnumResultUPP resultproc, Ptr userDataPtr)
 	// RRK modification 1/95 use CallEnumCacheProc define to call UPP
 	// return((*dnr)(ENUMCACHE, resultproc, userDataPtr));
 
-	return (CallEnumCacheProc(gDNRCodePtr, ENUMCACHE, resultproc, userDataPtr));
+	return (CallEnumCacheProc((EnumCacheUPP)gDNRCodePtr, ENUMCACHE, resultproc, userDataPtr));
 }
 	
 	
@@ -349,7 +350,7 @@ OSErr AddrToName(unsigned long addr, struct hostInfo *rtnStruct,
 	// RRK modification 1/95 use CallAddrToNameProc define to call UPP
 	// return((*dnr)(ADDRTONAME, addr, rtnStruct, resultproc, userDataPtr));
 
-	return(CallAddrToNameProc(gDNRCodePtr, ADDRTONAME, addr, rtnStruct, resultproc, userDataPtr));
+	return(CallAddrToNameProc((AddrToNameUPP)gDNRCodePtr, ADDRTONAME, addr, rtnStruct, resultproc, userDataPtr));
 }
 
 
@@ -363,7 +364,7 @@ extern OSErr HInfo(char *hostName, struct returnRec *returnRecPtr,
 	// RRK modification 1/95 use CallHInfoProc define to call UPP
 	// return((*dnr)(HINFO, hostName, returnRecPtr, resultProc, userDataPtr));
 
-	return(CallHInfoProc(gDNRCodePtr, HXINFO, hostName, returnRecPtr, resultProc, userDataPtr));
+	return(CallHInfoProc((HInfoUPP)gDNRCodePtr, HXINFO, hostName, returnRecPtr, resultProc, userDataPtr));
 
 }
 	
@@ -377,7 +378,7 @@ extern OSErr MXInfo(char *hostName, struct returnRec *returnRecPtr,
 	// RRK modification 1/95 use CallHInfoProc define to call UPP
 	// return((*dnr)(MXINFO, hostName, returnRecPtr, resultProc, userDataPtr));
 
-	return(CallMXInfoProc(gDNRCodePtr, MXINFO, hostName, returnRecPtr, resultProc, userDataPtr));
+	return(CallMXInfoProc((MXInfoUPP)gDNRCodePtr, MXINFO, hostName, returnRecPtr, resultProc, userDataPtr));
 
 }	/* removed ; (causes syntax err in Think C 5.0 */
 	
