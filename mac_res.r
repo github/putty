@@ -1,4 +1,4 @@
-/* $Id: mac_res.r,v 1.1.2.9 1999/03/11 21:40:31 ben Exp $ */
+/* $Id: mac_res.r,v 1.1.2.10 1999/03/13 18:22:47 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -50,8 +50,8 @@ resource 'vers' (1, purgeable) {
     0x00, 0x45,		/* Major and minor (BCD) */
     development, 0,	/* Status and pre-release */
     2,			/* Region code (2 = UK) */
-    "Mac exp",		/* Short version (list views) */
-    "Mac experimental version.  "
+    "Dev 0.45 Mac 0",		/* Short version (list views) */
+    "Dev 0.45 Mac 0"
     "Copyright Simon Tatham 1997-9",	/* Long version (get info) */
 };
 
@@ -366,7 +366,7 @@ resource 'DITL' (wAbout, "about", purgeable) {
 	{ 13, 13, 29, 173 },
 	StaticText { disabled, "PuTTY"},
 	{ 42, 13, 74, 173 },
-	StaticText { disabled, "Experimental Mac Port\n"
+	StaticText { disabled, "Dev 0.45 Mac 0\n"
 			       "© 1997-9 Simon Tatham"},
     }
 };
@@ -389,7 +389,7 @@ type 'TEXT' {
 
 resource 'TEXT' (wLicence, "licence", purgeable) {
     "Copyright © 1997-9 Simon Tatham\n"
-    "Portions copyright Gary S. Brown and Eric Young\n\n"
+    "Portions copyright Gary S. Brown, Eric Young and Ben Harris\n\n"
     
     "Permission is hereby granted, free of charge, to any person "
     "obtaining a copy of this software and associated documentation "
