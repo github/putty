@@ -1,4 +1,4 @@
-/* $Id: mac.c,v 1.1.2.20 1999/03/29 19:50:22 ben Exp $ */
+/* $Id: mac.c,v 1.1.2.21 1999/03/29 23:55:06 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -117,6 +117,9 @@ static void mac_startup(void) {
 	    mac_gestalts.apprvers = 0x0100;
 	else
 	    mac_gestalts.apprvers = 0;
+    /* Paranoia: Did we manage to pull in AppearanceLib? */
+    if (&RegisterAppearanceClient == NULL)
+	mac_gestalts.apprvers = 0;
     /* Mac OS 8.5 Control Manager (proportional scrollbars)? */
     if (Gestalt(gestaltControlMgrAttr, &mac_gestalts.cntlattr) != noErr)
 	mac_gestalts.cntlattr = 0;

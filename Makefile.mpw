@@ -1,4 +1,4 @@
-# $Id: Makefile.mpw,v 1.1.2.6 1999/03/28 17:34:36 ben Exp $
+# $Id: Makefile.mpw,v 1.1.2.7 1999/03/29 23:55:06 ben Exp $
 # This is the Makefile for building PuTTY for the Mac OS.
 # Users of non-Mac systems will see some pretty strange characters around.
 
@@ -58,7 +58,7 @@ Libs¥68K  =	"{CLibraries}StdCLib.o" ¶
 Libs¥PPC  =	"{SharedLibraries}InterfaceLib" ¶
 		"{SharedLibraries}StdCLib" ¶
 		"{SharedLibraries}MathLib" ¶
-		"{SharedLibraries}AppearanceLib" ¶
+		"{SharedLibraries}AppearanceLib" -weaklib AppearanceLib ¶
 		"{PPCLibraries}StdCRuntime.o" ¶
 		"{PPCLibraries}PPCCRuntime.o"
 
