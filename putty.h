@@ -111,7 +111,7 @@ typedef enum {
 } Net_Event_Type;
 
 #ifdef macintosh
-typedef Socket *SOCKET;
+typedef void *SOCKET;
 #define INVALID_SOCKET NULL
 #endif
 
@@ -123,6 +123,29 @@ typedef struct {
     void (*special) (Session *, Telnet_Special code);
     void (*shutdown) (Session *);
 } Backend;
+
+#ifdef macintosh
+typedef struct {
+    int (*init)(void);
+    SOCKET (*open)(Session *, char const *, int);
+    int (*recv)(SOCKET, void *, int, int);
+    int (*send)(SOCKET, void *, int, int);
+    void (*poll)(void);
+    void (*close)(SOCKET);
+    void (*destroy)(SOCKET);
+    void (*shutdown)(void);
+} Network_Stack;
+
+GLOBAL Network_Stack *net_stack;
+
+#define net_open(s, h, p)	((*net_stack->open)((s), (h), (p)))
+#define net_recv(s, b, l, f)	((*net_stack->recv)((s), (b), (l), (f)))
+#define net_send(s, b, l, f)	((*net_stack->send)((s), (b), (l), (f)))
+#define net_poll()		((*net_stack->poll)())
+#define net_close(s)		((*net_stack->close)(s))
+#define net_destroy(s)		((*net_stack->destroy)(s))
+#define net_shutdown()		((*net_stack->shutdown)())
+#endif
 
 typedef struct {
     /* Basic options */
@@ -300,14 +323,17 @@ extern void lognegot(const char *);
  * Exports from the network system
  */
 
+#ifndef macintosh
 extern Socket *net_open(Session *, char *host, int port);
 extern char *net_realname(Socket *);
 extern int net_recv(Socket *, void *, int, int);
 extern int net_send(Socket *, void *, int, int);
-#define SEND_PUSH 0x01
-#define SEND_URG 0x02
 extern void net_close(Socket *); /* ask the remote end to close */
 extern void net_destroy(Socket *); /* Tidy up */
+#endif
+#define SEND_PUSH 0x01
+#define SEND_URG 0x02
+
 
 /*
  * Exports from noise.c.

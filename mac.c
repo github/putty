@@ -1,4 +1,4 @@
-/* $Id: mac.c,v 1.1.2.24 1999/04/04 18:23:33 ben Exp $ */
+/* $Id: mac.c,v 1.1.2.25 1999/08/02 08:04:31 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -145,6 +145,22 @@ static void mac_startup(void) {
     InitCursor();
     windows.about = NULL;
     windows.licence = NULL;
+
+    /* Initialise networking */
+#ifdef WITH_OPENTRANSPORT
+    if ((*opentpt_stack.init)() == 0)
+	net_stack = &opentpt_stack;
+    else 
+#endif
+#ifdef WITH_MACTCP
+    if ((*mactcp_stack.init)() == 0)
+	net_stack = &mactcp_stack;
+    else
+#endif
+	fatalbox("No useful TCP/IP stack found");
+
+	
+
 }
 
 static void mac_eventloop(void) {
@@ -159,7 +175,7 @@ static void mac_eventloop(void) {
 	mac_adjustcursor(cursrgn);
 	if (gotevent)
 	    mac_event(&event);
-	macnet_eventcheck();
+	net_poll();
     }
     DisposeRgn(cursrgn);
 }
@@ -494,6 +510,7 @@ static void mac_adjustcursor(RgnHandle cursrgn) {
 
 static void mac_shutdown(void) {
 
+    net_shutdown();
     exit(0);
 }
 

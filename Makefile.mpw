@@ -1,4 +1,4 @@
-# $Id: Makefile.mpw,v 1.1.2.12 1999/04/04 18:23:33 ben Exp $
+# $Id: Makefile.mpw,v 1.1.2.13 1999/08/02 08:04:31 ben Exp $
 # This is the Makefile for building PuTTY for the Mac OS.
 # Users of non-Mac systems will see some pretty strange characters around.
 
@@ -16,9 +16,10 @@ Objects¥68K  = ¶
 		dnr.c.o ¶
 		mac.c.o ¶
 		maccfg.c.o ¶
-		macnet.c.o ¶
+#		macnet.c.o ¶
 		macterm.c.o ¶
 		misc.c.o ¶
+		opentpt.c.o ¶
 #		ssh.c.o ¶
 #		sshcrc.c.o ¶
 #		sshdes.c.o ¶
@@ -37,6 +38,7 @@ Objects¥PPC  = ¶
 		macnet.c.x ¶
 		macterm.c.x ¶
 		misc.c.x ¶
+		opentpt.c.x ¶
 #		ssh.c.x ¶
 #		sshcrc.c.x ¶
 #		sshdes.c.x ¶
@@ -52,14 +54,31 @@ Objects¥PPC  = ¶
 Libs¥68K  =	"{CLibraries}StdCLib.o" ¶
 		"{Libraries}MacRuntime.o" ¶
 		"{Libraries}IntEnv.o" ¶
-		"{Libraries}Interface.o"
+		"{Libraries}Interface.o" ¶
+		"{Libraries}OpenTransport.o" ¶
+		"{Libraries}OpenTptInet.o"
 
 Libs¥PPC  =	"{SharedLibraries}InterfaceLib" ¶
 		"{SharedLibraries}StdCLib" ¶
 		"{SharedLibraries}MathLib" ¶
-		"{SharedLibraries}AppearanceLib" -weaklib AppearanceLib ¶
+		"{SharedLibraries}AppearanceLib" ¶
+			-weaklib AppearanceLib ¶
+		"{SharedLibraries}OpenTransportLib" ¶
+			-weaklib OTGlobalLib ¶
+			-weaklib OTUtilityLib ¶
+			-weaklib OTClientUtilLib ¶
+			-weaklib OTClientLib ¶
+			-weaklib OTStreamUnixLib ¶
+			-weaklib OTXTILib ¶
+			-weaklib OTConfigLib ¶
+			-weaklib OTNtvUtilLib ¶
+			-weaklib OTNativeClientLib ¶
+		"{SharedLibraries}OpenTptInternetLib" ¶
+			-weaklib OTInetClientLib ¶
 		"{PPCLibraries}StdCRuntime.o" ¶
-		"{PPCLibraries}PPCCRuntime.o"
+		"{PPCLibraries}PPCCRuntime.o" ¶
+		"{PPCLibraries}OpenTransportAppPPC.o" ¶
+		"{PPCLibraries}OpenTptInetPPC.o"
 
 # pseudo-targets
 all Ä 68k ppc fat
@@ -130,6 +149,7 @@ maccfg.c.o	maccfg.c.x	Ä putty.h mac.h macresid.h
 macnet.c.o	macnet.c.x	Ä putty.h
 macterm.c.o	macterm.c.x	Ä putty.h mac.h
 misc.c.o	misc.c.x	Ä putty.h
+opentpt.c.o	opentpt.c.x	Ä putty.h mac.h
 ssh.c.o		ssh.c.x		Ä putty.h ssh.h
 sshcrc.c.o	sshcrc.c.x	Ä
 sshdes.c.o	sshdes.c.x	Ä ssh.h 
