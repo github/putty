@@ -1,4 +1,4 @@
-/* $Id: macterm.c,v 1.1.2.20 1999/03/14 13:08:43 ben Exp $ */
+/* $Id: macterm.c,v 1.1.2.21 1999/03/14 15:51:34 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -54,8 +54,10 @@
 #define DEFAULT_FG_BOLD	17
 #define DEFAULT_BG	18
 #define DEFAULT_BG_BOLD	19
-#define CURSOR_FG	22
-#define CURSOR_FG_BOLD	23
+#define CURSOR_FG	20
+#define CURSOR_FG_BOLD	21
+#define CURSOR_BG	22
+#define CURSOR_BG_BOLD	23
 
 #define PTOCC(x) ((x) < 0 ? -(-(x - font_width - 1) / font_width) : \
 			    (x) / font_width)
@@ -546,8 +548,10 @@ void mac_activateterm(WindowPtr window, Boolean active) {
     term_update();
     if (active)
 	ShowControl(s->scrollbar);
-    else
+    else {
+	PmBackColor(DEFAULT_BG); /* HideControl clears behind the control */
 	HideControl(s->scrollbar);
+    }
 }
 
 void mac_updateterm(WindowPtr window) {
@@ -619,58 +623,81 @@ void do_text(struct mac_session *s, int x, int y, char *text, int len,
 	style |= underline;
     TextFace(style);
     TextSize(cfg.fontheight);
-    if (attr & ATTR_REVERSE)
-	TextMode(notSrcCopy);
-    else
-	TextMode(srcCopy);
     SetFractEnable(FALSE); /* We want characters on pixel boundaries */
     textrgn = NewRgn();
     RectRgn(textrgn, &a.textrect);
     DeviceLoop(textrgn, do_text_for_device, (long)&a, 0);
-    /* Tell the window manager about it in case this isn't an update */
     DisposeRgn(textrgn);
+    /* Tell the window manager about it in case this isn't an update */
     ValidRect(&a.textrect);
 }
 
 static pascal void do_text_for_device(short depth, short devflags,
 				      GDHandle device, long cookie) {
     struct do_text_args *a;
-    int bgcolour, fgcolour;
+    int bgcolour, fgcolour, bright;
 
     a = (struct do_text_args *)cookie;
+
+    bright = (a->attr & ATTR_BOLD) && cfg.bold_colour;
+
+    if (a->attr & ATTR_REVERSE)
+	TextMode(notSrcCopy);
+    else
+	TextMode(srcCopy);
 
     switch (depth) {
       case 1:
 	/* XXX This should be done with a _little_ more configurability */
 	ForeColor(whiteColor);
 	BackColor(blackColor);
+	if (a->attr & ATTR_ACTCURS)
+	    TextMode((a->attr & ATTR_REVERSE) ? srcCopy : notSrcCopy);
 	break;
       case 2:
-	if ((a->attr & ATTR_BOLD) && cfg.bold_colour)
-	    PmForeColor(DEFAULT_FG_BOLD);
-	else
-	    PmForeColor(DEFAULT_FG);
-	if (a->attr & ATTR_ACTCURS)
-	    PmBackColor(CURSOR_FG);
-	else
+	if (a->attr & ATTR_ACTCURS) {
+	    PmForeColor(bright ? CURSOR_FG_BOLD : CURSOR_FG);
+	    PmBackColor(CURSOR_BG);
+	    TextMode(srcCopy);
+	} else {
+	    PmForeColor(bright ? DEFAULT_FG_BOLD : DEFAULT_FG);
 	    PmBackColor(DEFAULT_BG);
+	}
 	break;
       default:
-	fgcolour = ((a->attr & ATTR_FGMASK) >> ATTR_FGSHIFT) * 2;
-	bgcolour = ((a->attr & ATTR_BGMASK) >> ATTR_BGSHIFT) * 2;
-	if ((a->attr & ATTR_BOLD) && cfg.bold_colour)
-	    if (a->attr & ATTR_REVERSE)
-		bgcolour++;
-	    else
-		fgcolour++;
-	if (a->attr & ATTR_ACTCURS)
-	    bgcolour = CURSOR_FG;
+	if (a->attr & ATTR_ACTCURS) {
+	    fgcolour = (bright ? CURSOR_FG_BOLD : CURSOR_FG);
+	    bgcolour = CURSOR_BG;
+	    TextMode(srcCopy);
+	} else {
+	    fgcolour = ((a->attr & ATTR_FGMASK) >> ATTR_FGSHIFT) * 2;
+	    bgcolour = ((a->attr & ATTR_BGMASK) >> ATTR_BGSHIFT) * 2;
+	    if (bright)
+		if (a->attr & ATTR_REVERSE)
+		    bgcolour++;
+		else
+		    fgcolour++;
+	}
 	PmForeColor(fgcolour);
 	PmBackColor(bgcolour);
 	break;
     }
+
     MoveTo(a->textrect.left, a->textrect.top + a->s->font_ascent);
     DrawText(a->text, 0, a->len);
+
+    if (a->attr & ATTR_PASCURS) {
+	PenNormal();
+	switch (depth) {
+	  case 1:
+	    PenMode(patXor);
+	    break;
+	  default:
+	    PmForeColor(CURSOR_BG);
+	    break;
+	}
+	FrameRect(&a->textrect);
+    }
 }
 
 /*
