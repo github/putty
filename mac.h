@@ -30,6 +30,8 @@ extern void mac_keyterm(WindowPtr, EventRecord *);
 extern void mac_menuterm(WindowPtr, short, short);
 /* from maccfg.c */
 extern void mac_loadconfig(Config *);
+/* from macnet.c */
+extern void macnet_eventcheck(void);
 
 #endif
 

@@ -1,4 +1,4 @@
-/* $Id: macnet.c,v 1.1.2.2 1999/04/03 21:53:29 ben Exp $ */
+/* $Id: macnet.c,v 1.1.2.3 1999/04/04 18:23:34 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -73,21 +73,17 @@ typedef struct Socket {
     TCPiopb spareiopb; /* for closing etc */
     hostInfo hostinfo;
     int port;
-//    unsigned char *inbuf;
-//    int inbuf_head, inbuf_reap, inbuf_size;
-//    unsigned char *outbuf;
-//    int outbuf_head, outbuf_reap, outbuf_size;
     ProcessSerialNumber psn;
     Session *s;
-    UInt32 a5;
-    qHdr sendq; /* Blocks waiting to be sent */
-    qHdr freeq; /* Blocks sent, waiting to be freed */
+    long a5;
+    QHdr sendq; /* Blocks waiting to be sent */
 } Socket;
 
 typedef struct {
     QElem qelem;
     int flags;
-    int len;
+    wdsEntry wds;
+    short wdsterm;
 } Send_Buffer;
 
 /*
@@ -112,9 +108,11 @@ static int mtcp_initted = FALSE;
 
 static OSErr macnet_init(void);
 static pascal void macnet_resolved(hostInfo *, char *);
-static void macnet_opened(TCPiopb*);
-static void macnet_sent(TCPiopb*);
-static void macnet_closed(TCPiopb*);
+static void macnet_completed_open(TCPiopb*);
+static void macnet_completed_send(TCPiopb*);
+static void macnet_sent(Socket *);
+static void macnet_startsend(Socket *);
+static void macnet_completed_close(TCPiopb*);
 static pascal void macnet_asr(StreamPtr, unsigned short, Ptr, unsigned short,
 			      ICMPReport *);
 static void macnet_sendevent(Socket *, Net_Event_Type);
@@ -122,21 +120,22 @@ static void macnet_sendevent(Socket *, Net_Event_Type);
 #if TARGET_RT_MAC_CFM
 static RoutineDescriptor macnet_resolved_upp =
     BUILD_ROUTINE_DESCRIPTOR(uppResultProcInfo, (ProcPtr)macnet_resolved);
-static RoutineDescriptor macnet_opened_upp =
+static RoutineDescriptor macnet_completed_open_upp =
     BUILD_ROUTINE_DESCRIPTOR(uppTCPIOCompletionProcInfo,
-			     (ProcPtr)macnet_opened);
-static RoutineDescriptor macnet_sent_upp =
-    BUILD_ROUTINE_DESCRIPTOR(uppTCPIOCompletionProcInfo, (ProcPtr)macnet_sent);
-static RoutineDescriptor macnet_closed_upp =
+			     (ProcPtr)macnet_completed_open);
+static RoutineDescriptor macnet_complete_send_upp =
     BUILD_ROUTINE_DESCRIPTOR(uppTCPIOCompletionProcInfo,
-			     (ProcPtr)macnet_closed);
+			     (ProcPtr)macnet_completed_send);
+static RoutineDescriptor macnet_completed_close_upp =
+    BUILD_ROUTINE_DESCRIPTOR(uppTCPIOCompletionProcInfo,
+			     (ProcPtr)macnet_completed_close);
 static RoutineDescriptor macnet_asr_upp =
     BUILD_ROUTINE_DESCRIPTOR(uppTCPNotifyProcInfo, (ProcPtr)macnet_asr);
 #else
 #define macnet_resolved_upp macnet_resolved
-#define macnet_opened_upp macnet_opened
-#define macnet_sent_upp macnet_sent
-#define macnet_closed_upp macnet_closed
+#define macnet_completed_open_upp macnet_completed_open
+#define macnet_completed_send_upp macnet_completed_send
+#define macnet_completed_close_upp macnet_completed_close
 #define macnet_asr_upp macnet_asr
 #endif
 
@@ -153,13 +152,18 @@ static OSErr macnet_init(void) {
     NetEvent *eventblock;
     int i;
 
+    /*
+     * FIXME: This is hideously broken, in that we're meant to faff
+     * with unit numbers and stuff, and we blatantly don't.
+     */
     err = opendriver(".IPP", &mtcp_refnum);
     if (err != noErr)
 	return err;
     err = OpenResolver(NULL);
     if (err != noErr)
 	return err;
-    /* Set up the event queues, and fill the free queue with events */
+    /* Set up the event queues, and fill the free queue with events 
+     */
     macnet_eventq.qFlags = 0;
     macnet_eventq.qHead = macnet_eventq.qTail = NULL;
     macnet_freeq.qFlags = 0;
@@ -168,6 +172,7 @@ static OSErr macnet_init(void) {
     for (i = 0; i < NUM_EVENTS; i++)
 	Enqueue(&eventblock[i].qelem, &macnet_freeq);
     mtcp_initted = TRUE;
+    return 0;
 }
 
 Socket *net_open(Session *s, char *host, int port) {
@@ -217,9 +222,11 @@ Socket *net_open(Session *s, char *host, int port) {
 static pascal void macnet_resolved(hostInfo *hi, char *cookie) {
     Socket *sock = (Socket *)cookie;
     OSErr err;
-    UInt32 olda5;
+#if !TARGET_RT_CFM
+    long olda5;
 
     olda5 = SetA5(sock->a5);
+#endif
     /*
      * We've resolved a name, so now we'd like to connect to it (or
      * report an error).
@@ -227,7 +234,7 @@ static pascal void macnet_resolved(hostInfo *hi, char *cookie) {
     switch (sock->hostinfo.rtnCode) {
       case noErr:
 	/* Open a connection */
-	sock->iopb.ioCompletion = macnet_opened_upp;
+	sock->iopb.ioCompletion = macnet_completed_open_upp;
 	sock->iopb.csCode = TCPActiveOpen;
 	sock->iopb.csParam.open.validityFlags = typeOfService;
 	sock->iopb.csParam.open.commandTimeoutValue = 0; /* unused */
@@ -249,14 +256,18 @@ static pascal void macnet_resolved(hostInfo *hi, char *cookie) {
 	macnet_sendevent(sock, NE_NOHOST);
 	break;
     }
+#if !TARGET_RT_CFM
     SetA5(olda5);
+#endif
 }
 
-static void macnet_opened(TCPiopb *iopb) {
+static void macnet_completed_open(TCPiopb *iopb) {
     Socket *sock = (Socket *)iopb->csParam.open.userDataPtr;
-    UInt32 olda5;
+#if !TARGET_RT_CFM
+    long olda5;
 
     olda5 = SetA5(sock->a5);
+#endif
     switch (iopb->ioResult) {
       case noErr:
 	macnet_sendevent(sock, NE_OPEN);
@@ -265,16 +276,20 @@ static void macnet_opened(TCPiopb *iopb) {
 	macnet_sendevent(sock, NE_NOOPEN);
 	break;
     }
+#if !TARGET_RT_CFM
     SetA5(olda5);
+#endif
 }
 
 static pascal void macnet_asr(StreamPtr tcpstream, unsigned short eventcode,
 			      Ptr cookie, unsigned short terminreason,
 			      ICMPReport *icmpmsg) {
     Socket *sock = (Socket *)cookie;
-    UInt32 olda5;
+#if !TARGET_RT_CFM
+    long olda5;
 
     olda5 = SetA5(sock->a5);
+#endif
     switch (eventcode) {
       case TCPClosing:
 	macnet_sendevent(sock, NE_CLOSING);
@@ -306,23 +321,87 @@ static pascal void macnet_asr(StreamPtr tcpstream, unsigned short eventcode,
 	}
 	break;
     }
+#if !TARGET_RT_CFM
     SetA5(olda5);
+#endif
 }
 
 /*
  * Send a block of data.
  */
 
-int net_send(Socket *sock, void *buf, int buflen, int flags) {{
+int net_send(Socket *sock, void *buf, int buflen, int flags) {
     OSErr err;
     Send_Buffer *buff;
 
     buff = smalloc(sizeof(Send_Buffer) + buflen);
     buff->flags = flags;
-    buff->len = buflen;
-    memcpy(buff + 1, buf, buflen);
+    buff->wds.length = buflen;
+    buff->wds.ptr = (Ptr)&buff[1]; /* after the end of the struct */
+    buff->wdsterm = 0;
+    memcpy(&buff[1], buf, buflen);
     Enqueue(&buff->qelem, &sock->sendq);
-    macnet_start(sock);
+    /* Kick off the transmit if the queue was empty */
+    if (sock->sendq.qHead == &buff->qelem)
+	macnet_startsend(sock);
+}
+
+/*
+ * This is called once every time round the event loop to check for
+ * network events and handle them.
+ */
+void macnet_eventcheck() {
+    NetEvent *ne;
+
+    if (!mtcp_initted)
+	return;
+    ne = (NetEvent *)macnet_eventq.qHead;
+    if (ne == NULL)
+	return;
+    Dequeue(&ne->qelem, &macnet_eventq);
+    switch (ne->type) {
+      case NE_SENT:
+	macnet_sent(ne->sock);
+	break;
+      default:
+	(ne->sock->s->back->msg)(ne->sock->s, ne->sock, ne->type);
+	break;
+    }
+    Enqueue(&ne->qelem, &macnet_freeq);
+}
+
+/*
+ * The block at the head of the send queue has finished sending, so we
+ * can free it.  Kick off the next transmission if there is one.
+ */
+static void macnet_sent(Socket *sock) {
+    Send_Buffer *buff;
+
+    assert(sock->sendq.qHead != NULL);
+    buff = (Send_Buffer *)sock->sendq.qHead;
+    Dequeue(&buff->qelem, &sock->sendq);
+    sfree(buff);
+    if (sock->sendq.qHead != NULL)
+	macnet_startsend(sock);
+}
+
+/*
+ * There's a block on the head of the send queue which needs to be
+ * sent.
+ */
+
+static void macnet_startsend(Socket *sock) {
+    Send_Buffer *buff;
+    OSErr err;
+
+    buff = (Send_Buffer *)sock->sendq.qHead;
+    sock->iopb.csCode = TCPSend;
+    sock->iopb.csParam.send.validityFlags = 0;
+    sock->iopb.csParam.send.pushFlag = buff->flags & SEND_PUSH ? true : false;
+    sock->iopb.csParam.send.urgentFlag = buff->flags & SEND_URG ? true : false;
+    sock->iopb.csParam.send.wdsPtr = (Ptr)&buff->wds;
+    sock->iopb.csParam.send.userDataPtr = (char *)sock;
+    err = PBControlAsync((ParmBlkPtr)&sock->iopb);
 }
 
 int net_recv(Socket *sock, void *buf, int buflen, int flags) {
@@ -331,7 +410,8 @@ int net_recv(Socket *sock, void *buf, int buflen, int flags) {
     int avail, want, got;
 
     memcpy(&iopb, &sock->iopb, sizeof(TCPiopb));
-    /* Work out if there's anything to recieve (we don't want to block) */
+    /* Work out if there's anything to recieve (we don't want to block) 
+ */
     iopb.csCode = TCPStatus;
     err = PBControlSync((ParmBlkPtr)&iopb);
     if (err != noErr)
@@ -341,12 +421,12 @@ int net_recv(Socket *sock, void *buf, int buflen, int flags) {
 	return 0;
     want = avail < buflen ? avail : buflen;
     iopb.csCode = TCPRcv;
-    iopb.csParam.receive.buffPtr = buf;
-    iopb.csParam.receive.buffLen = want;
+    iopb.csParam.receive.rcvBuff = buf;
+    iopb.csParam.receive.rcvBuffLen = want;
     err = PBControlSync((ParmBlkPtr)&iopb);
     if (err != noErr)
 	return 0;
-    return iopb.csParam.receive.buffLen;
+    return iopb.csParam.receive.rcvBuffLen;
 }
 	
 
@@ -360,7 +440,7 @@ void net_close(Socket *sock) {
      * free it, which we can't do at interrupt time).
      */
     memcpy(&sock->spareiopb, &sock->iopb, sizeof(TCPiopb));
-    sock->spareiopb.ioCompletion = macnet_closed_upp;
+    sock->spareiopb.ioCompletion = macnet_completed_close_upp;
     sock->spareiopb.csCode = TCPClose;
     sock->spareiopb.csParam.close.validityFlags = 0;
     sock->spareiopb.csParam.close.userDataPtr = (char *)sock;
@@ -376,11 +456,13 @@ void net_close(Socket *sock) {
     }
 }
 
-static void macnet_closed(TCPiopb* iopb) {
+static void macnet_completed_close(TCPiopb* iopb) {
     Socket *sock = (Socket *)iopb->csParam.close.userDataPtr;
-    UInt32 olda5;
+#if !TARGET_RT_CFM
+    long olda5;
 
     olda5 = SetA5(sock->a5);
+#endif
     switch (iopb->ioResult) {
       case noErr:
 	macnet_sendevent(sock, NE_CLOSED);
@@ -392,7 +474,9 @@ static void macnet_closed(TCPiopb* iopb) {
 	macnet_sendevent(sock, NE_DIED);
 	break;
     }
+#if !TARGET_RT_CFM
     SetA5(olda5);
+#endif
 }
 
 /*

@@ -1,4 +1,4 @@
-# $Id: Makefile.mpw,v 1.1.2.11 1999/04/03 21:53:29 ben Exp $
+# $Id: Makefile.mpw,v 1.1.2.12 1999/04/04 18:23:33 ben Exp $
 # This is the Makefile for building PuTTY for the Mac OS.
 # Users of non-Mac systems will see some pretty strange characters around.
 
@@ -13,8 +13,10 @@ COptions     = {Includes} {Sym¥68K} -proto strict -opt all
 PPCCOptions  = {Includes} {Sym¥PPC} -w 35
 
 Objects¥68K  = ¶
+		dnr.c.o ¶
 		mac.c.o ¶
 		maccfg.c.o ¶
+		macnet.c.o ¶
 		macterm.c.o ¶
 		misc.c.o ¶
 #		ssh.c.o ¶
@@ -24,13 +26,15 @@ Objects¥68K  = ¶
 #		sshrand.c.o ¶
 #		sshrsa.c.o ¶
 #		sshsha.c.o ¶
-#		telnet.c.o ¶
+		telnet.c.o ¶
 		terminal.c.o ¶
 		testback.c.o
 
 Objects¥PPC  = ¶
+		dnr.c.x ¶
 		mac.c.x ¶
 		maccfg.c.x ¶
+		macnet.c.x ¶
 		macterm.c.x ¶
 		misc.c.x ¶
 #		ssh.c.x ¶
@@ -40,7 +44,7 @@ Objects¥PPC  = ¶
 #		sshrand.c.x ¶
 #		sshrsa.c.x ¶
 #		sshsha.c.x ¶
-#		telnet.c.x ¶
+		telnet.c.x ¶
 		terminal.c.x ¶
 		testback.c.x
 
@@ -89,11 +93,13 @@ PuTTY.68k ÄÄ {Objects¥68K} {Libs¥68K}
 		ILink ¶
 			-o {Targ} {Sym¥68K} ¶
 			-t 'APPL' -c 'pTTY' ¶
+			-br 68k -model far ¶
 			-newerdeps {NewerDeps}
 	ELSE
 		ILink ¶
 			-o {Targ} {Sym¥68K} ¶
 			-t 'APPL' -c 'pTTY' ¶
+			-br 68k -model far¶
 			{Objects¥68K} ¶
 			{Libs¥68K}
 	END
@@ -118,6 +124,7 @@ PuTTY Ä PuTTY.68k PuTTY.ppc version.r version.h
 	setfile -t XCOF {Targ}
 	{PPCC} {default}.c -o {Targ} {PPCCOptions}
 
+dnr.c.o		dnr.c.x		Ä
 mac.c.o 	mac.c.x		Ä putty.h mac.h macresid.h
 maccfg.c.o	maccfg.c.x	Ä putty.h mac.h macresid.h
 macnet.c.o	macnet.c.x	Ä putty.h

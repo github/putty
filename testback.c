@@ -1,4 +1,4 @@
-/* $Id: testback.c,v 1.1.2.5 1999/03/29 19:50:24 ben Exp $ */
+/* $Id: testback.c,v 1.1.2.6 1999/04/04 18:23:35 ben Exp $ */
 /*
  * Copyright (c) 1999 Simon Tatham
  * Copyright (c) 1999 Ben Harris
@@ -33,8 +33,8 @@
 
 #include "putty.h"
 
-static char *null_init(Session *, char *, int, char **);
-static int null_msg(Session *);
+static char *null_init(Session *);
+static int null_msg(Session *, Socket *, Net_Event_Type);
 static void null_send(Session *, char *, int);
 static void loop_send(Session *, char *, int);
 static void hexdump_send(Session *, char *, int);
@@ -53,12 +53,12 @@ Backend hexdump_backend = {
     null_init, null_msg, hexdump_send, null_size, null_special
 };
 
-static char *null_init(Session *s, char *host, int port, char **realhost) {
+static char *null_init(Session *s) {
 
     return NULL;
 }
 
-static int null_msg(Session *s) {
+static int null_msg(Session *s, Socket *sock, Net_Event_Type ne) {
 
     return 1;
 }

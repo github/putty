@@ -1,4 +1,4 @@
-/* $Id: macterm.c,v 1.1.2.33 1999/03/30 19:44:51 ben Exp $ */
+/* $Id: macterm.c,v 1.1.2.34 1999/04/04 18:23:34 ben Exp $ */
 /*
  * Copyright (c) 1999 Simon Tatham
  * Copyright (c) 1999 Ben Harris
@@ -140,7 +140,7 @@ void mac_newsession(void) {
     s = smalloc(sizeof(*s));
     memset(s, 0, sizeof(*s));
     mac_loadconfig(&s->cfg);
-    s->back = &hexdump_backend;
+    s->back = &telnet_backend;
 	
     /* XXX: Own storage management? */
     if (mac_gestalts.qdvers == gestaltOriginalQD)
@@ -158,11 +158,12 @@ void mac_newsession(void) {
     SetPalette(s->window, s->palette, TRUE); 
     ActivatePalette(s->window);
     ShowWindow(s->window);
-    starttime = TickCount();
-    display_resource(s, 'pTST', 128);
-    sprintf(msg, "Elapsed ticks: %d\015\012", TickCount() - starttime);
-    inbuf_putstr(s, msg);
-    term_out(s);
+    s->back->init(s);
+/*     starttime = TickCount(); */
+/*     display_resource(s, 'pTST', 128); */
+/*     sprintf(msg, "Elapsed ticks: %d\015\012", TickCount() - starttime); */
+/*     inbuf_putstr(s, msg); */
+/*     term_out(s); */
 }
 
 static void mac_initfont(Session *s) {
@@ -1009,6 +1010,11 @@ void do_scroll(Session *s, int topline, int botline, int lines) {
     /* XXX: move update region? */
     InvalRgn(update);
     DisposeRgn(update);
+}
+
+void lognegot(/*Session *s,*/ const char *str) {
+
+    /* XXX Do something */
 }
 
 /*

@@ -102,6 +102,7 @@ typedef enum {
     NE_NOOPEN,	/* Connection failed to open for some other reason */
     NE_DATA,	/* Incoming normal data */
     NE_URGENT,	/* Incoming urgent data */
+    NE_SENT,	/* Used internally by Mac network stack */
     NE_CLOSING,	/* Connection closed by remote host */
     NE_CLOSED,	/* Connection close completed */
     NE_TIMEOUT,	/* Remote host vanished */
@@ -109,10 +110,14 @@ typedef enum {
     NE_DIED,	/* Connection has failed for some other reason */
 } Net_Event_Type;
 
+#ifdef macintosh
+typedef Socket *SOCKET;
+#define INVALID_SOCKET NULL
+#endif
 
 typedef struct {
-    char *(*init) (Session *, char *host, int port);
-    int (*msg)(Session *, Socket *, Net_Event_Type);
+    char *(*init) (Session *);
+    int (*msg)(Session *, SOCKET, Net_Event_Type);
     void (*send) (Session *, char *buf, int len);
     void (*size) (Session *);
     void (*special) (Session *, Telnet_Special code);
@@ -281,14 +286,15 @@ extern void pre_paint(Session *);
 extern void post_paint(Session *);
 extern void palette_set(Session *, int, int, int, int);
 extern void palette_reset(Session *);
-void write_clip (void *, int);
-void get_clip (void **, int *);
+extern void write_clip (void *, int);
+extern void get_clip (void **, int *);
 extern void do_scroll(Session *, int, int, int);
-void fatalbox (const char *, ...);
+extern void fatalbox(const char *, ...);
 #ifdef macintosh
 #pragma noreturn (fatalbox)
 #endif
-extern void beep (Session *s);
+extern void beep(Session *s);
+extern void lognegot(const char *);
 
 /*
  * Exports from the network system
@@ -298,6 +304,8 @@ extern Socket *net_open(Session *, char *host, int port);
 extern char *net_realname(Socket *);
 extern int net_recv(Socket *, void *, int, int);
 extern int net_send(Socket *, void *, int, int);
+#define SEND_PUSH 0x01
+#define SEND_URG 0x02
 extern void net_close(Socket *); /* ask the remote end to close */
 extern void net_destroy(Socket *); /* Tidy up */
 
