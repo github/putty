@@ -1,9 +1,10 @@
-/* $Id: maccfg.c,v 1.1.2.5 1999/03/28 02:06:10 ben Exp $ */
+/* $Id: maccfg.c,v 1.1.2.6 1999/07/24 15:51:12 ben Exp $ */
 /*
  * maccfg.c -- Mac port configuration
  */
 
 #include <MacMemory.h>
+#include <Palettes.h>
 #include <Resources.h>
 #include <TextUtils.h>
 
@@ -129,9 +130,11 @@ void mac_loadconfig(Config *cfg) {
     /* Colour */
     cfg->try_palette = FALSE;		/* XXX */
     cfg->bold_colour = (s->colour_flags & BOLD_COLOUR) != 0;
-    cfg->colours = GetNewPalette(s->colours_id);
-    if (cfg->colours == NULL)
-	fatalbox("Failed to get default palette");
+    if (HAVE_COLOR_QD()) {
+	cfg->colours = GetNewPalette(s->colours_id);
+	if (cfg->colours == NULL)
+	    fatalbox("Failed to get default palette");
+    }
     /* Selection */
     cfg->implicit_copy = (s->selection_flags & IMPLICIT_COPY) != 0;
     get_wordness(s->wordness_id, cfg->wordness);

@@ -1,4 +1,4 @@
-/* $Id: macterm.c,v 1.1.2.34 1999/04/04 18:23:34 ben Exp $ */
+/* $Id: macterm.c,v 1.1.2.35 1999/07/24 15:51:12 ben Exp $ */
 /*
  * Copyright (c) 1999 Simon Tatham
  * Copyright (c) 1999 Ben Harris
@@ -96,11 +96,6 @@ static RoutineDescriptor mac_set_attr_mask_upp =
 #define mac_set_attr_mask_upp	mac_set_attr_mask
 #endif /* not TARGET_RT_MAC_CFM */
 
-/*
- * Temporary hack till I get the terminal emulator supporting multiple
- * sessions
- */
-
 static void inbuf_putc(Session *s, int c) {
     s->inbuf[s->inbuf_head] = c;
     s->inbuf_head = (s->inbuf_head+1) & INBUF_MASK;
@@ -140,13 +135,13 @@ void mac_newsession(void) {
     s = smalloc(sizeof(*s));
     memset(s, 0, sizeof(*s));
     mac_loadconfig(&s->cfg);
-    s->back = &telnet_backend;
+    s->back = &null_backend;
 	
     /* XXX: Own storage management? */
-    if (mac_gestalts.qdvers == gestaltOriginalQD)
-	s->window = GetNewWindow(wTerminal, NULL, (WindowPtr)-1);
-    else
+    if (HAVE_COLOR_QD())
 	s->window = GetNewCWindow(wTerminal, NULL, (WindowPtr)-1);
+    else
+	s->window = GetNewWindow(wTerminal, NULL, (WindowPtr)-1);
     SetWRefCon(s->window, (long)s);
     s->scrollbar = GetNewControl(cVScroll, s->window);
     term_init(s);
@@ -154,16 +149,18 @@ void mac_newsession(void) {
     mac_initfont(s);
     mac_initpalette(s);
     s->attr_mask = ATTR_MASK;
-    /* Set to FALSE to not get palette updates in the background. */
-    SetPalette(s->window, s->palette, TRUE); 
-    ActivatePalette(s->window);
+    if (HAVE_COLOR_QD()) {
+	/* Set to FALSE to not get palette updates in the background. */
+	SetPalette(s->window, s->palette, TRUE); 
+	ActivatePalette(s->window);
+    }
     ShowWindow(s->window);
     s->back->init(s);
-/*     starttime = TickCount(); */
-/*     display_resource(s, 'pTST', 128); */
-/*     sprintf(msg, "Elapsed ticks: %d\015\012", TickCount() - starttime); */
-/*     inbuf_putstr(s, msg); */
-/*     term_out(s); */
+    starttime = TickCount();
+    display_resource(s, 'pTST', 128);
+    sprintf(msg, "Elapsed ticks: %d\015\012", TickCount() - starttime);
+    inbuf_putstr(s, msg);
+    term_out(s);
 }
 
 static void mac_initfont(Session *s) {
@@ -209,7 +206,7 @@ static void mac_adjustsize(Session *s, int newrows, int newcols) {
 
 static void mac_initpalette(Session *s) {
   
-    if (mac_gestalts.qdvers == gestaltOriginalQD)
+    if (!HAVE_COLOR_QD())
 	return;
     s->palette = NewPalette((*s->cfg.colours)->pmEntries,
 			    NULL, pmCourteous, 0);
@@ -226,6 +223,8 @@ static void mac_initpalette(Session *s) {
  */
 static void mac_adjustwinbg(Session *s) {
 
+    if (!HAVE_COLOR_QD())
+	return;
 #if TARGET_RT_CFM /* XXX doesn't link (at least for 68k) */
     if (mac_gestalts.windattr & gestaltWindowMgrPresent)
 	SetWindowContentColor(s->window,
@@ -680,7 +679,10 @@ void mac_activateterm(WindowPtr window, Boolean active) {
     if (active)
 	ShowControl(s->scrollbar);
     else {
-	PmBackColor(DEFAULT_BG); /* HideControl clears behind the control */
+	if (HAVE_COLOR_QD())
+	    PmBackColor(DEFAULT_BG);/* HideControl clears behind the control */
+	else
+	    BackColor(blackColor);
 	HideControl(s->scrollbar);
     }
     mac_drawgrowicon(s);
@@ -699,8 +701,13 @@ void mac_updateterm(WindowPtr window) {
 	       (*window->visRgn)->rgnBBox.right,
 	       (*window->visRgn)->rgnBBox.bottom);
     /* Restore default colours in case the Window Manager uses them */
-    PmForeColor(DEFAULT_FG);
-    PmBackColor(DEFAULT_BG);
+    if (HAVE_COLOR_QD()) {
+	PmForeColor(DEFAULT_FG);
+	PmBackColor(DEFAULT_BG);
+    } else {
+	ForeColor(whiteColor);
+	BackColor(blackColor);
+    }
     if (FrontWindow() != window)
 	EraseRect(&(*s->scrollbar)->contrlRect);
     UpdateControls(window, window->visRgn);
@@ -771,7 +778,7 @@ void do_text(Session *s, int x, int y, char *text, int len,
     TextFace(style);
     TextSize(s->cfg.fontheight);
     SetFractEnable(FALSE); /* We want characters on pixel boundaries */
-    if (mac_gestalts.qdvers > gestaltOriginalQD)
+    if (HAVE_COLOR_QD())
 	if (style & bold) {
 	    SpaceExtra(s->font_boldadjust << 16);
 	    CharExtra(s->font_boldadjust << 16);
@@ -781,10 +788,10 @@ void do_text(Session *s, int x, int y, char *text, int len,
 	}
     textrgn = NewRgn();
     RectRgn(textrgn, &a.textrect);
-    if (mac_gestalts.qdvers == gestaltOriginalQD)
-	do_text_for_device(1, 0, NULL, (long)&a);
-    else
+    if (HAVE_COLOR_QD())
 	DeviceLoop(textrgn, &do_text_for_device_upp, (long)&a, 0);
+    else
+	do_text_for_device(1, 0, NULL, (long)&a);
     DisposeRgn(textrgn);
     /* Tell the window manager about it in case this isn't an update */
     ValidRect(&a.textrect);
@@ -843,6 +850,7 @@ static pascal void do_text_for_device(short depth, short devflags,
     else
 	EraseRect(&a->leadrect);
     MoveTo(a->textrect.left, a->textrect.top + a->s->font_ascent);
+    /* FIXME: Sort out bold width adjustments on Original QuickDraw. */
     DrawText(a->text, 0, a->len);
 
     if (a->attr & ATTR_PASCURS) {
@@ -866,7 +874,10 @@ static pascal void do_text_for_device(short depth, short devflags,
 void pre_paint(Session *s) {
 
     s->attr_mask = ATTR_INVALID;
-    DeviceLoop(s->window->visRgn, &mac_set_attr_mask_upp, (long)s, 0);
+    if (HAVE_COLOR_QD())
+	DeviceLoop(s->window->visRgn, &mac_set_attr_mask_upp, (long)s, 0);
+    else
+	mac_set_attr_mask(1, 0, NULL, (long)s);
 }
 
 static pascal void mac_set_attr_mask(short depth, short devflags,
@@ -966,7 +977,7 @@ void palette_set(Session *s, int n, int r, int g, int b) {
 	16, 17, 18, 20, 22
     };
     
-    if (mac_gestalts.qdvers == gestaltOriginalQD)
+    if (!HAVE_COLOR_QD())
       return;
     col.red   = r * 0x0101;
     col.green = g * 0x0101;
@@ -984,7 +995,7 @@ void palette_set(Session *s, int n, int r, int g, int b) {
  */
 void palette_reset(Session *s) {
 
-    if (mac_gestalts.qdvers == gestaltOriginalQD)
+    if (!HAVE_COLOR_QD())
 	return;
     CopyPalette(s->cfg.colours, s->palette, 0, 0,
 		(*s->cfg.colours)->pmEntries);
@@ -1001,8 +1012,12 @@ void do_scroll(Session *s, int topline, int botline, int lines) {
     Rect r;
     RgnHandle update;
 
+    /* FIXME: This is seriously broken on Original QuickDraw.  No idea why. */
     SetPort(s->window);
-    PmBackColor(DEFAULT_BG);
+    if (HAVE_COLOR_QD())
+	PmBackColor(DEFAULT_BG);
+    else
+	BackColor(blackColor);
     update = NewRgn();
     SetRect(&r, 0, topline * s->font_height,
 	    s->cols * s->font_width, (botline + 1) * s->font_height);

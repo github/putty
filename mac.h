@@ -7,6 +7,7 @@
 
 #include <MacTypes.h>
 #include <Events.h>
+#include <Gestalt.h>
 #include <MacWindows.h>
 
 struct mac_gestalts {
@@ -17,6 +18,8 @@ struct mac_gestalts {
 };
 
 extern struct mac_gestalts mac_gestalts;
+
+#define HAVE_COLOR_QD() (mac_gestalts.qdvers > gestaltOriginalQD)
 
 /* from macterm.c */
 extern void mac_newsession(void);
@@ -32,6 +35,8 @@ extern void mac_menuterm(WindowPtr, short, short);
 extern void mac_loadconfig(Config *);
 /* from macnet.c */
 extern void macnet_eventcheck(void);
+/* from opentpt.c */
+extern void opentpt_shutdown(void);
 
 #endif
 
