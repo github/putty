@@ -1,4 +1,4 @@
-/* $Id: mac_res.r,v 1.1.2.14 1999/03/28 02:06:10 ben Exp $ */
+/* $Id: mac_res.r,v 1.1.2.15 1999/03/29 19:48:50 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -561,7 +561,7 @@ resource 'pSET' (PREF_settings, "settings", purgeable) {
     auto_wrap,
     no_auto_cr,
     use_icon_name,
-    bold_colour,
+    bold_font,
     no_implicit_copy,
 #define PREF_strings 1024
     PREF_strings, 1,		/* host 'STR#' */
