@@ -495,6 +495,9 @@ static void save_cursor(int save) {
     } else {
 	curs_x = save_x;
 	curs_y = save_y;
+	/* Make sure the window hasn't shrunk since the save */
+	if (curs_x >= cols) curs_x = cols-1;
+	if (curs_y >= rows) curs_y = rows-1;
 	curr_attr = save_attr;
 	cset = save_cset;
 	cset_attr[cset] = save_csattr;
