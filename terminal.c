@@ -1187,8 +1187,10 @@ void term_out(void) {
 	check_selection (cpos, cpos+1);
     }
 	
-    if (must_update || nl_count > MAXNL)
+    if (must_update || nl_count > MAXNL) {
+	update_sbar();
 	term_update();
+    }
 }
 
 /*
