@@ -605,7 +605,7 @@ static void ssh_opened(Session *sess) {
  * has closed, or <0 for a socket error.
  */
 static int ssh_msg (Session *sess, SOCKET sock, Net_Event_Type ne) {
-    struct ssh_private *sp = (struct ssh_provate *)sess->back_priv;
+    struct ssh_private *sp = (struct ssh_private *)sess->back_priv;
     int ret;
     char buf[256];
 
