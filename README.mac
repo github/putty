@@ -1,0 +1,26 @@
+$Id: README.mac,v 1.1.2.1 1999/03/29 19:51:40 ben Exp $
+
+Information about PuTTY for the Mac OS
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+Known bugs:
+
+ * PowerPC and fat versions fail to start on systems without AppearanceLib (ie
+   most System 7 ones).  The 68k version works fine.
+ * If the screen scrolls more than once between calls to WaitNextEvent, Bad
+   Things can happen owing to a bug in do_scroll.  This can be fixed when I
+   have an easy way to test it.
+ * Display is far too slow.
+ * Fails to work on systems without Color QuickDraw.
+ * Real bold doesn't compensate for changing character widths.
+ * ResEdit 'TMPL' resource seems to be broken.
+
+Features we need (and aren't entirely obvious):
+
+ * Scroll-conflation -- scroll_display should change the in-memory display and
+   remember the scroll, then do_scroll should be called only when
+   scroll_display gets called for a different rectangle or term_paint happens.
+
+Local Variables:
+mode: text
+End:
