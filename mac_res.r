@@ -1,4 +1,4 @@
-/* $Id: mac_res.r,v 1.1.2.12 1999/03/15 00:40:55 ben Exp $ */
+/* $Id: mac_res.r,v 1.1.2.13 1999/03/16 20:27:30 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -459,8 +459,10 @@ type 'TEXT' {
 
 resource 'TEXT' (wLicence, "licence", purgeable) {
     "Copyright © 1997-9 Simon Tatham\n"
-    "Portions copyright Gary S. Brown, Eric Young and Ben Harris\n\n"
-    
+    "Portions copyright © 1999 Ben Harris\n"
+    "Portions copyright © 1993 Eric Young\n"
+    "Portions copyright © 1986 Gary S. Brown\n"
+    "\n"    
     "Permission is hereby granted, free of charge, to any person "
     "obtaining a copy of this software and associated documentation "
     "files (the \"Software\"), to deal in the Software without "
@@ -525,6 +527,9 @@ type 'pSET' {
     /* Colour options */
     boolean bold_font, bold_colour;
     align long;
+    /* Selection options */
+    boolean no_implicit_copy, implicit_copy;
+    align long;
     /* Non-boolean options */
     integer; integer;		/* host */
     longint;			/* port */
@@ -556,6 +561,7 @@ resource 'pSET' (PREF_settings, "settings", purgeable) {
     no_auto_cr,
     use_icon_name,
     bold_colour,
+    no_implicit_copy,
 #define PREF_strings 1024
     PREF_strings, 1,		/* host 'STR#' */
     23, prot_telnet,		/* port, protocol */
@@ -645,6 +651,15 @@ resource 'TMPL' (128, "pSET") {
 	"", 'BBIT',
 	"", 'ALNG',
 	"Use colour for bold", 'BBIT',
+	"", 'BBIT',
+	"", 'BBIT',
+	"", 'BBIT',
+	"", 'BBIT',
+	"", 'BBIT',
+	"", 'BBIT',
+	"", 'BBIT',
+	"", 'ALNG',
+	"Implicit copy", 'BBIT',
 	"", 'BBIT',
 	"", 'BBIT',
 	"", 'BBIT',

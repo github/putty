@@ -1427,7 +1427,8 @@ void term_mouse (Mouse_Button b, Mouse_Action a, int x, int y) {
 	sel_spread();
     } else if ((b == MB_SELECT || b == MB_EXTEND) && a == MA_RELEASE)
 	if (selstate == DRAGGING) {
-	    term_copy();
+	    if (cfg.implicit_copy)
+		term_copy();
 	    selstate = SELECTED;
 	} else
 	    selstate = NO_SELECTION;
@@ -1490,6 +1491,14 @@ void term_paste() {
 	}
     }
     get_clip(NULL, NULL);
+}
+
+/*
+ * Find out if there's a selection.
+ */
+int term_hasselection(void) {
+
+    return selstate == SELECTED;
 }
 
 static void deselect (void) {

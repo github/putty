@@ -1,4 +1,4 @@
-/* $Id: macterm.c,v 1.1.2.24 1999/03/15 14:22:45 ben Exp $ */
+/* $Id: macterm.c,v 1.1.2.25 1999/03/16 20:27:31 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -33,6 +33,7 @@
 #include <Controls.h>
 #include <Fonts.h>
 #include <Gestalt.h>
+#include <MacMemory.h>
 #include <MacWindows.h>
 #include <Palettes.h>
 #include <Quickdraw.h>
@@ -78,6 +79,7 @@ static void mac_initfont(struct mac_session *);
 static void mac_initpalette(struct mac_session *);
 static void mac_adjustwinbg(struct mac_session *);
 static void mac_adjustsize(struct mac_session *, int, int);
+static void mac_drawgrowicon(struct mac_session *s);
 static pascal void mac_scrolltracker(ControlHandle, short);
 static pascal void do_text_for_device(short, short, GDHandle, long);
 static pascal void mac_set_attr_mask(short, short, GDHandle, long);
@@ -233,7 +235,10 @@ void mac_adjusttermmenus(WindowPtr window) {
     EnableItem(menu, 0);
     DisableItem(menu, iUndo);
     DisableItem(menu, iCut);
-    DisableItem(menu, iCopy);
+    if (term_hasselection())
+	EnableItem(menu, iCopy);
+    else
+	DisableItem(menu, iCopy);
     if (GetScrap(NULL, 'TEXT', &offset) == noTypeErr)
 	DisableItem(menu, iPaste);
     else
@@ -242,6 +247,23 @@ void mac_adjusttermmenus(WindowPtr window) {
     EnableItem(menu, iSelectAll);
 }
 
+void mac_menuterm(WindowPtr window, short menu, short item) {
+    struct mac_session *s;
+
+    s = (struct mac_session *)GetWRefCon(window);
+    switch (menu) {
+      case mEdit:
+	switch (item) {
+	  case iCopy:
+	    term_copy();
+	    break;
+	  case iPaste:
+	    term_paste();
+	    break;
+	}
+    }
+}
+	    
 void mac_clickterm(WindowPtr window, EventRecord *event) {
     struct mac_session *s;
     Point mouse;
@@ -321,8 +343,24 @@ void write_clip(void *data, int len) {
 }
 
 void get_clip(void **p, int *lenp) {
+    static Handle h = NULL;
+    long offset;
 
-    /* XXX: do something */
+    if (p == NULL) {
+	/* release memory */
+	if (h != NULL)
+	    DisposeHandle(h);
+	h = NULL;
+    } else
+	if (GetScrap(NULL, 'TEXT', &offset) > 0) {
+	    h = NewEmptyHandle();
+	    *lenp = GetScrap(h, 'TEXT', &offset);
+	    HLock(h);
+	    *p = *h;
+	} else {
+	    *p = NULL;
+	    *lenp = 0;
+	}
 }
 
 static pascal void mac_scrolltracker(ControlHandle control, short part) {
@@ -565,11 +603,11 @@ void mac_activateterm(WindowPtr window, Boolean active) {
 	PmBackColor(DEFAULT_BG); /* HideControl clears behind the control */
 	HideControl(s->scrollbar);
     }
+    mac_drawgrowicon(s);
 }
 
 void mac_updateterm(WindowPtr window) {
     struct mac_session *s;
-    Rect clip;
 
     s = (struct mac_session *)GetWRefCon(window);
     BeginUpdate(window);
@@ -585,15 +623,23 @@ void mac_updateterm(WindowPtr window) {
     if (FrontWindow() != window)
 	EraseRect(&(*s->scrollbar)->contrlRect);
     UpdateControls(window, window->visRgn);
-    /* Stop DrawGrowIcon giving us space for a horizontal scrollbar */
-    SetRect(&clip, window->portRect.right - 15, SHRT_MIN, SHRT_MAX, SHRT_MAX);
-    ClipRect(&clip);
-    DrawGrowIcon(window);
-    clip.left = SHRT_MIN;
-    ClipRect(&clip);
+    mac_drawgrowicon(s);
     free_ctx(NULL);
     EndUpdate(window);
 }
+
+static void mac_drawgrowicon(struct mac_session *s) {
+    Rect clip;
+
+    SetPort(s->window);
+    /* Stop DrawGrowIcon giving us space for a horizontal scrollbar */
+    SetRect(&clip, s->window->portRect.right - 15, SHRT_MIN,
+	    SHRT_MAX, SHRT_MAX);
+    ClipRect(&clip);
+    DrawGrowIcon(s->window);
+    clip.left = SHRT_MIN;
+    ClipRect(&clip);
+}    
 
 struct do_text_args {
     struct mac_session *s;

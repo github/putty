@@ -1,4 +1,4 @@
-/* $Id: mac.c,v 1.1.2.15 1999/03/14 13:08:43 ben Exp $ */
+/* $Id: mac.c,v 1.1.2.16 1999/03/16 20:27:30 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -304,35 +304,48 @@ static void mac_keypress(EventRecord *event) {
 static void mac_menucommand(long result) {
     short menu, item;
     Str255 da;
+    WindowPtr window;
 
     menu = HiWord(result);
     item = LoWord(result);
+    window = FrontWindow();
+    /* Things which do the same whatever window we're in. */
     switch (menu) {
       case mApple:
         switch (item) {
           case iAbout:
-            GetNewDialog(wAbout, NULL, (GrafPort *)-1);
-            break;
+	    if (windows.about)
+		SelectWindow(windows.about);
+	    else
+		windows.about = GetNewDialog(wAbout, NULL, (WindowPtr)-1);
+            goto done;
           default:
             GetMenuItemText(GetMenuHandle(mApple), item, da);
             OpenDeskAcc(da);
-            break;
+            goto done;
         }
         break;
       case mFile:
         switch (item) {
           case iNew:
             mac_newsession();
-            break;
+            goto done;
           case iClose:
-            mac_closewindow(FrontWindow());
-            break;
+            mac_closewindow(window);
+            goto done;
           case iQuit:
             mac_shutdown();
-            break;
+            goto done;
         }
         break;
     }
+    /* If we get here, handling is up to window-specific code. */
+    switch (mac_windowtype(window)) {
+      case wTerminal:
+	mac_menuterm(window, menu, item);
+	break;
+    }
+  done:
     HiliteMenu(0);
 }
 
@@ -344,6 +357,10 @@ static void mac_closewindow(WindowPtr window) {
 	break;
       case wTerminal:
 	/* FIXME: end session and stuff */
+	break;
+      case wAbout:
+	windows.about = NULL;
+	CloseWindow(window);
 	break;
       default:
 	CloseWindow(window);
@@ -371,6 +388,10 @@ static void mac_adjustmenus(void) {
     menu = GetMenuHandle(mFile);
     EnableItem(menu, 0);
     EnableItem(menu, iNew);
+    if (window != NULL)
+	EnableItem(menu, iClose);
+    else
+	DisableItem(menu, iClose);
     EnableItem(menu, iQuit);
 
     switch (mac_windowtype(window)) {

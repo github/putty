@@ -1,4 +1,4 @@
-# $Id: Makefile.mpw,v 1.1.2.2 1999/03/14 20:07:04 ben Exp $
+# $Id: Makefile.mpw,v 1.1.2.3 1999/03/16 20:27:30 ben Exp $
 # This is the Makefile for building PuTTY for the Mac OS.
 # Users of non-Mac systems will see some pretty strange characters around.
 
@@ -34,12 +34,14 @@ Libs¥68K  =	"{CLibraries}StdCLib.o" ¶
 PuTTY ÄÄ {Objects¥68K} {Libs¥68K}
 	IF (`exists {Targ}.NJ`)
 		ILink ¶
+			-compact ¶
 			-o {Targ} {Sym¥68K} ¶
 			-t 'APPL' ¶
 			-c 'pTTY' ¶
 			-newerdeps {NewerDeps}
 	ELSE
 		ILink ¶
+			-compact ¶
 			-o {Targ} {Sym¥68K} ¶
 			-t 'APPL' ¶
 			-c 'pTTY' ¶

@@ -1,4 +1,4 @@
-/* $Id: maccfg.c,v 1.1.2.2 1999/03/14 15:48:35 ben Exp $ */
+/* $Id: maccfg.c,v 1.1.2.3 1999/03/16 20:27:30 ben Exp $ */
 /*
  * maccfg.c -- Mac port configuration
  */
@@ -60,6 +60,8 @@ struct pSET {
 #define WIN_NAME_ALWAYS	0x10000000
     unsigned long colour_flags;
 #define BOLD_COLOUR	0x80000000
+    unsigned long selection_flags;
+#define IMPLICIT_COPY	0x80000000
     struct strloc host;
     long port;
     long protocol;
@@ -127,6 +129,7 @@ void mac_loadconfig(Config *cfg) {
     if (cfg->colours == NULL)
 	fatalbox("Failed to get default palette");
     /* Selection */
+    cfg->implicit_copy = (s->selection_flags & IMPLICIT_COPY) != 0;
     get_wordness(s->wordness_id, cfg->wordness);
     SetResAttrs(h, GetResAttrs(h) & ~resLocked);
     ReleaseResource(h);

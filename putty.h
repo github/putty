@@ -164,7 +164,8 @@ typedef struct {
     unsigned char colours[22][3];
 #endif /* not macintosh */
     /* Selection options */
-#ifndef macintosh
+    int implicit_copy;
+#ifdef macintosh
     int mouse_is_xterm;
 #endif
     short wordness[256];
@@ -246,6 +247,7 @@ void term_clrsb (void);
 void term_mouse (Mouse_Button, Mouse_Action, int, int);
 void term_copy(void);
 void term_paste(void);
+int term_hasselection(void);
 void term_deselect (void);
 void term_update (void);
 void term_invalidate(void);
