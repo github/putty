@@ -1,4 +1,4 @@
-/* $Id: mac.c,v 1.1.2.16 1999/03/16 20:27:30 ben Exp $ */
+/* $Id: mac.c,v 1.1.2.17 1999/03/21 23:23:42 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -67,7 +67,7 @@ static void mac_updatewindow(WindowPtr);
 static void mac_keypress(EventRecord *);
 static int mac_windowtype(WindowPtr);
 static void mac_menucommand(long);
-static void mac_adjustcursor(void);
+static void mac_adjustcursor(RgnHandle);
 static void mac_adjustmenus(void);
 static void mac_closewindow(WindowPtr);
 static void mac_zoomwindow(WindowPtr, short);
@@ -140,14 +140,17 @@ static void mac_eventloop(void) {
     Boolean gotevent;
     EventRecord event;
     int i;
+    RgnHandle cursrgn;
 
+    cursrgn = NewRgn();
     for (;;) {
-    	mac_adjustcursor();
-	gotevent = WaitNextEvent(everyEvent, &event, LONG_MAX, NULL);
-	mac_adjustcursor();
+    	mac_adjustcursor(cursrgn);
+	gotevent = WaitNextEvent(everyEvent, &event, LONG_MAX, cursrgn);
+	mac_adjustcursor(cursrgn);
 	if (gotevent)
 	    mac_event(&event);
     }
+    DisposeRgn(cursrgn);
 }
 
 static void mac_event(EventRecord *event) {
@@ -409,9 +412,32 @@ static void mac_adjustmenus(void) {
 /*
  * Make sure the right cursor's being displayed.
  */
-static void mac_adjustcursor(void) {
+static void mac_adjustcursor(RgnHandle cursrgn) {
+    Point mouse;
+    WindowPtr window, front;
+    short part;
 
-    SetCursor(&qd.arrow);
+    GetMouse(&mouse);
+    LocalToGlobal(&mouse);
+    part = FindWindow(mouse, &window);
+    front = FrontWindow();
+    if (part != inContent || window == NULL || window != front) {
+	/* Cursor isn't in the front window, so switch to arrow */
+	SetCursor(&qd.arrow);
+	SetRectRgn(cursrgn, SHRT_MIN, SHRT_MIN, SHRT_MAX, SHRT_MAX);
+	if (front != NULL)
+	    DiffRgn(cursrgn, front->visRgn, cursrgn);
+    } else {
+	switch (mac_windowtype(window)) {
+	  case wTerminal:
+	    mac_adjusttermcursor(window, mouse, cursrgn);
+	    break;
+	  default:
+	    SetCursor(&qd.arrow);
+	    CopyRgn(window->visRgn, cursrgn);
+	    break;
+	}
+    }
 }
 
 static void mac_shutdown(void) {

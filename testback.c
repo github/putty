@@ -1,4 +1,4 @@
-/* $Id: testback.c,v 1.1.2.2 1999/03/18 00:04:34 ben Exp $ */
+/* $Id: testback.c,v 1.1.2.3 1999/03/21 23:23:43 ben Exp $ */
 /*
  * Copyright (c) 1999 Simon Tatham
  * Copyright (c) 1999 Ben Harris
@@ -70,6 +70,8 @@ static void loop_send (char *buf, int len) {
 	    inbuf_head = new_head;
 	}
     }
+    term_out();
+    term_update();
 }
 
 

@@ -1,4 +1,4 @@
-/* $Id: macterm.c,v 1.1.2.26 1999/03/18 00:04:34 ben Exp $ */
+/* $Id: macterm.c,v 1.1.2.27 1999/03/21 23:23:42 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -240,6 +240,34 @@ static void mac_adjustwinbg(struct mac_session *s) {
 }
 
 /*
+ * Set the cursor shape correctly
+ */
+void mac_adjusttermcursor(WindowPtr window, Point mouse, RgnHandle cursrgn) {
+    struct mac_session *s;
+    ControlHandle control;
+    short part;
+    int x, y;
+
+    SetPort(window);
+    s = (struct mac_session *)GetWRefCon(window);
+    GlobalToLocal(&mouse);
+    part = FindControl(mouse, window, &control);
+    if (control == s->scrollbar) {
+	SetCursor(&qd.arrow);
+	RectRgn(cursrgn, &(*s->scrollbar)->contrlRect);
+	SectRgn(cursrgn, window->visRgn, cursrgn);
+    } else {
+	x = mouse.h / font_width;
+	y = mouse.v / font_height;
+	SetCursor(*GetCursor(iBeamCursor));
+	/* Ask for shape changes if we leave this character cell. */
+	SetRectRgn(cursrgn, x * font_width, y * font_height,
+		   (x + 1) * font_width, (y + 1) * font_height);
+	SectRgn(cursrgn, window->visRgn, cursrgn);
+    }
+}
+
+/*
  * Enable/disable menu items based on the active terminal window.
  */
 void mac_adjusttermmenus(WindowPtr window) {
@@ -370,10 +398,12 @@ void get_clip(void **p, int *lenp) {
 	h = NULL;
     } else
 	if (GetScrap(NULL, 'TEXT', &offset) > 0) {
-	    h = NewEmptyHandle();
+	    h = NewHandle(0);
 	    *lenp = GetScrap(h, 'TEXT', &offset);
 	    HLock(h);
 	    *p = *h;
+	    if (*p == NULL || *lenp <= 0)
+		fatalbox("Empty scrap");
 	} else {
 	    *p = NULL;
 	    *lenp = 0;
@@ -452,8 +482,6 @@ void mac_keyterm(WindowPtr window, EventRecord *event) {
     s = (struct mac_session *)GetWRefCon(window);
     len = mac_keytrans(s, event, buf);
     back->send((char *)buf, len);
-    term_out();
-    term_update();
 }
 
 static int mac_keytrans(struct mac_session *s, EventRecord *event,

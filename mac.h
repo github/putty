@@ -22,6 +22,7 @@ extern struct mac_gestalts mac_gestalts;
 /* from macterm.c */
 extern void mac_newsession(void);
 extern void mac_activateterm(WindowPtr, Boolean);
+extern void mac_adjusttermcursor(WindowPtr, Point, RgnHandle);
 extern void mac_adjusttermmenus(WindowPtr);
 extern void mac_updateterm(WindowPtr);
 extern void mac_clickterm(WindowPtr, EventRecord *);
