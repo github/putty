@@ -1,11 +1,11 @@
-# $Id: Makefile.mpw,v 1.1.2.1 1999/03/13 16:51:46 ben Exp $
+# $Id: Makefile.mpw,v 1.1.2.2 1999/03/14 20:07:04 ben Exp $
 # This is the Makefile for building PuTTY for the Mac OS.
 # Users of non-Mac systems will see some pretty strange characters around.
 
 MAKEFILE     = Makefile.mpw
-¥MondoBuild¥ = {MAKEFILE}  # Make blank to avoid rebuilds when makefile is modified
+¥MondoBuild¥ =  # Make blank to avoid rebuilds when makefile is modified
 Includes     =
-Sym¥68K      = 
+Sym¥68K      =
 ObjDir¥68K   =
 
 COptions     = {Includes} {Sym¥68K} -proto strict -opt all
@@ -26,21 +26,26 @@ Objects¥68K  = ¶
 		"{ObjDir¥68K}terminal.c.o" ¶
 		"{ObjDir¥68K}testback.c.o"
 
-
-PuTTY ÄÄ {¥MondoBuild¥} {Objects¥68K}
-	Link ¶
-		-o {Targ} -d {Sym¥68K} ¶
-		{Objects¥68K} ¶
-		-t 'APPL' ¶
-		-c 'pTTY' ¶
-		#"{Libraries}MathLib.o" ¶
-		#"{CLibraries}Complex.o" ¶
-		"{CLibraries}StdCLib.o" ¶
+Libs¥68K  =	"{CLibraries}StdCLib.o" ¶
 		"{Libraries}MacRuntime.o" ¶
 		"{Libraries}IntEnv.o" ¶
-		#"{Libraries}ToolLibs.o" ¶
 		"{Libraries}Interface.o"
 
+PuTTY ÄÄ {Objects¥68K} {Libs¥68K}
+	IF (`exists {Targ}.NJ`)
+		ILink ¶
+			-o {Targ} {Sym¥68K} ¶
+			-t 'APPL' ¶
+			-c 'pTTY' ¶
+			-newerdeps {NewerDeps}
+	ELSE
+		ILink ¶
+			-o {Targ} {Sym¥68K} ¶
+			-t 'APPL' ¶
+			-c 'pTTY' ¶
+			{Objects¥68K} ¶
+			{Libs¥68K}
+	END
 
 PuTTY ÄÄ {¥MondoBuild¥} mac_res.r macresid.h
 	Rez mac_res.r -o {Targ} {Includes} -append
