@@ -53,7 +53,11 @@ typedef struct mac_session *Context;
 typedef HDC Context;
 #endif /* not macintosh */
 
+#ifdef macintosh
+#define SEL_NL { 13 }
+#else
 #define SEL_NL { 13, 10 }
+#endif
 
 /*
  * Global variables. Most modules declare these `extern', but

@@ -1,4 +1,4 @@
-/* $Id: macterm.c,v 1.1.2.17 1999/03/11 21:40:32 ben Exp $ */
+/* $Id: macterm.c,v 1.1.2.18 1999/03/11 23:23:45 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -285,10 +285,24 @@ static void text_click(struct mac_session *s, EventRecord *event) {
 		   MA_DRAG, col, row);
 	if (row > rows - 1)
 	    term_scroll(0, row - (rows - 1));
-	else if (row < 0)
-	    term_scroll(0, row);
+	else if (row <= 0)
+	    term_scroll(0, row - 1);
     }
+    term_mouse(event->modifiers & shiftKey ? MB_EXTEND : MB_SELECT, MA_RELEASE,
+	       col, row);
     lastwhen = TickCount();
+}
+
+void write_clip(void *data, int len) {
+    
+    if (ZeroScrap() != noErr)
+	return;
+    PutScrap(len, 'TEXT', data);
+}
+
+void get_clip(void **p, int *lenp) {
+
+    /* XXX: do something */
 }
 
 static pascal void mac_scrolltracker(ControlHandle control, short part) {
