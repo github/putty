@@ -1,4 +1,4 @@
-/* $Id: macterm.c,v 1.1.2.32 1999/03/29 19:50:23 ben Exp $ */
+/* $Id: macterm.c,v 1.1.2.33 1999/03/30 19:44:51 ben Exp $ */
 /*
  * Copyright (c) 1999 Simon Tatham
  * Copyright (c) 1999 Ben Harris
@@ -180,6 +180,11 @@ static void mac_initfont(Session *s) {
     s->font_ascent = fi.ascent;
     s->font_leading = fi.leading;
     s->font_height = s->font_ascent + fi.descent + s->font_leading;
+    if (!s->cfg.bold_colour) {
+	TextFace(bold);
+	s->font_boldadjust = s->font_width - CharWidth('W');
+    } else
+	s->font_boldadjust = 0;
     mac_adjustsize(s, s->rows, s->cols);
 }
 
@@ -765,9 +770,20 @@ void do_text(Session *s, int x, int y, char *text, int len,
     TextFace(style);
     TextSize(s->cfg.fontheight);
     SetFractEnable(FALSE); /* We want characters on pixel boundaries */
+    if (mac_gestalts.qdvers > gestaltOriginalQD)
+	if (style & bold) {
+	    SpaceExtra(s->font_boldadjust << 16);
+	    CharExtra(s->font_boldadjust << 16);
+	} else {
+	    SpaceExtra(0);
+	    CharExtra(0);
+	}
     textrgn = NewRgn();
     RectRgn(textrgn, &a.textrect);
-    DeviceLoop(textrgn, &do_text_for_device_upp, (long)&a, 0);
+    if (mac_gestalts.qdvers == gestaltOriginalQD)
+	do_text_for_device(1, 0, NULL, (long)&a);
+    else
+	DeviceLoop(textrgn, &do_text_for_device_upp, (long)&a, 0);
     DisposeRgn(textrgn);
     /* Tell the window manager about it in case this isn't an update */
     ValidRect(&a.textrect);

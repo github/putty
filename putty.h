@@ -13,7 +13,6 @@
 #include <Controls.h>
 #include <Windows.h>
 typedef UInt32 DWORD;
-struct mac_session;
 #endif /* macintosh */
 
 #ifndef TRUE
@@ -47,13 +46,6 @@ struct mac_session;
 #define ERASE_CHAR   (ATTR_DEFAULT | ' ')
 #define ATTR_MASK    0xFFFFFF00UL
 #define CHAR_MASK    0x000000FFUL
-
-#ifdef macintosh
-struct mac_session;
-typedef struct mac_session *Context;
-#else /* not macintosh */
-typedef HDC Context;
-#endif /* not macintosh */
 
 #ifdef macintosh
 #define SEL_NL { 13 }
@@ -252,6 +244,7 @@ typedef struct Session {
     short		fontnum;
     int			font_ascent;
     int			font_leading;
+    int			font_boldadjust;
     WindowPtr		window;
     PaletteHandle	palette;
     ControlHandle	scrollbar;
