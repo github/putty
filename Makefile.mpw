@@ -1,4 +1,4 @@
-# $Id: Makefile.mpw,v 1.1.2.10 1999/04/02 12:56:57 ben Exp $
+# $Id: Makefile.mpw,v 1.1.2.11 1999/04/03 21:53:29 ben Exp $
 # This is the Makefile for building PuTTY for the Mac OS.
 # Users of non-Mac systems will see some pretty strange characters around.
 
@@ -120,6 +120,7 @@ PuTTY Ä PuTTY.68k PuTTY.ppc version.r version.h
 
 mac.c.o 	mac.c.x		Ä putty.h mac.h macresid.h
 maccfg.c.o	maccfg.c.x	Ä putty.h mac.h macresid.h
+macnet.c.o	macnet.c.x	Ä putty.h
 macterm.c.o	macterm.c.x	Ä putty.h mac.h
 misc.c.o	misc.c.x	Ä putty.h
 ssh.c.o		ssh.c.x		Ä putty.h ssh.h

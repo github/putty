@@ -90,18 +90,33 @@ typedef enum {
 } VT_Mode;
 
 typedef struct Session Session;
+typedef struct Socket Socket;
+
+/* Types of network event */
+
+typedef enum {
+    NE_NULL,	/* Nothing happened */
+    NE_OPEN,	/* Connection successfully opened */
+    NE_NOHOST,	/* DNS lookup failed for some reason */
+    NE_REFUSED,	/* Port unreachable */
+    NE_NOOPEN,	/* Connection failed to open for some other reason */
+    NE_DATA,	/* Incoming normal data */
+    NE_URGENT,	/* Incoming urgent data */
+    NE_CLOSING,	/* Connection closed by remote host */
+    NE_CLOSED,	/* Connection close completed */
+    NE_TIMEOUT,	/* Remote host vanished */
+    NE_ABORT,	/* Remote host reset connection */
+    NE_DIED,	/* Connection has failed for some other reason */
+} Net_Event_Type;
+
 
 typedef struct {
-#ifdef macintosh
-	char *(*init) (Session *, char *host, int port, char **realhost);
-	int (*msg)(Session *);
-#else /* not macintosh */
-    char *(*init) (HWND hwnd, char *host, int port, char **realhost);
-    int (*msg) (WPARAM wParam, LPARAM lParam);
-#endif /* not macintosh */
+    char *(*init) (Session *, char *host, int port);
+    int (*msg)(Session *, Socket *, Net_Event_Type);
     void (*send) (Session *, char *buf, int len);
     void (*size) (Session *);
     void (*special) (Session *, Telnet_Special code);
+    void (*shutdown) (Session *);
 } Backend;
 
 typedef struct {
@@ -252,6 +267,7 @@ typedef struct Session {
 #endif
 } Session;
 
+typedef struct Socket Socket;
 
 /*
  * Exports from display system
@@ -273,7 +289,17 @@ void fatalbox (const char *, ...);
 #pragma noreturn (fatalbox)
 #endif
 extern void beep (Session *s);
-#define OPTIMISE_IS_SCROLL 1
+
+/*
+ * Exports from the network system
+ */
+
+extern Socket *net_open(Session *, char *host, int port);
+extern char *net_realname(Socket *);
+extern int net_recv(Socket *, void *, int, int);
+extern int net_send(Socket *, void *, int, int);
+extern void net_close(Socket *); /* ask the remote end to close */
+extern void net_destroy(Socket *); /* Tidy up */
 
 /*
  * Exports from noise.c.
