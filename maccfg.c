@@ -1,4 +1,4 @@
-/* $Id: maccfg.c,v 1.1.2.1 1999/02/28 02:38:40 ben Exp $ */
+/* $Id: maccfg.c,v 1.1.2.2 1999/03/14 15:48:35 ben Exp $ */
 /*
  * maccfg.c -- Mac port configuration
  */
@@ -35,10 +35,11 @@ static void get_wordness(short id, short *dst) {
 
     h = GetResource(PREF_wordness_type, id);
     if (h == NULL || *h == NULL)
-	fatalbox ("Couldn't get wordness (%d)", ResError());
+	fatalbox ("Couldn't get wordness id %d (%d)", id, ResError());
     memcpy(dst, *h, 256 * sizeof(short));
 }
 
+#pragma options align=mac68k
 struct pSET {
     unsigned long basic_flags;
 #define CLOSE_ON_EXIT	0x80000000
@@ -71,6 +72,7 @@ struct pSET {
     short colours_id;
     short wordness_id;
 };
+#pragma options align=reset
 
 /*
  * Load a configuration from the current chain of resource files.
@@ -80,8 +82,11 @@ void mac_loadconfig(Config *cfg) {
     struct pSET *s;
 
     h = GetResource('pSET', PREF_settings);
-    if (h == NULL)
+    if (h == NULL || *h == NULL)
 	fatalbox("Can't load settings");
+    if (GetResourceSizeOnDisk(h) != sizeof(struct pSET))
+	fatalbox("Settings resource is wrong size (%d vs %d)",
+		 GetResourceSizeOnDisk(h), sizeof(struct pSET));
     SetResAttrs(h, GetResAttrs(h) | resLocked);
     s = (struct pSET *)*h;
     /* Basic */
@@ -126,3 +131,10 @@ void mac_loadconfig(Config *cfg) {
     SetResAttrs(h, GetResAttrs(h) & ~resLocked);
     ReleaseResource(h);
 }
+
+/*
+ * Emacs magic:
+ * Local Variables:
+ * c-file-style: "simon"
+ * End:
+ */
