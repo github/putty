@@ -1,5 +1,6 @@
-/* $Id: macterm.c,v 1.1.2.30 1999/03/28 02:06:10 ben Exp $ */
+/* $Id: macterm.c,v 1.1.2.31 1999/03/28 15:27:03 ben Exp $ */
 /*
+ * Copyright (c) 1999 Simon Tatham
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
  *
@@ -149,7 +150,7 @@ void mac_newsession(void) {
 
     /* This should obviously be initialised by other means */
     mac_loadconfig(&cfg);
-    back = &loop_backend;
+    back = &hexdump_backend;
     s = smalloc(sizeof(*s));
     memset(s, 0, sizeof(*s));
     onlysession = s;
@@ -441,7 +442,6 @@ static pascal void mac_scrolltracker(ControlHandle control, short part) {
     }
 }
 
-#define K_SPACE	0x3100
 #define K_BS	0x3300
 #define K_F1	0x7a00
 #define K_F2	0x7800
@@ -455,6 +455,9 @@ static pascal void mac_scrolltracker(ControlHandle control, short part) {
 #define K_F10	0x6d00
 #define K_F11	0x6700
 #define K_F12	0x6f00
+#define K_F13	0x6900
+#define K_F14	0x6b00
+#define K_F15	0x7100
 #define K_INSERT 0x7200
 #define K_HOME	0x7300
 #define K_PRIOR	0x7400
@@ -643,6 +646,9 @@ static int mac_keytrans(struct mac_session *s, EventRecord *event,
 	return p - output;
       case K_LEFT:
 	p += sprintf((char *)p, app_cursor_keys ? "\x1BOD" : "\x1B[D");
+	return p - output;
+      case KP_ENTER:
+	*p++ = 0x0d;
 	return p - output;
       case K_BS:
 	*p++ = (cfg.bksp_is_delete ? 0x7f : 0x08);
