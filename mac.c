@@ -1,4 +1,4 @@
-/* $Id: mac.c,v 1.1.2.26 1999/08/02 22:32:38 ben Exp $ */
+/* $Id: mac.c,v 1.1.2.27 1999/09/01 22:13:52 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -121,9 +121,11 @@ static void mac_startup(void) {
 	    mac_gestalts.apprvers = 0x0100;
 	else
 	    mac_gestalts.apprvers = 0;
+#if TARGET_RT_MAC_CFM
     /* Paranoia: Did we manage to pull in AppearanceLib? */
     if (&RegisterAppearanceClient == kUnresolvedCFragSymbolAddress)
 	mac_gestalts.apprvers = 0;
+#endif
     /* Mac OS 8.5 Control Manager (proportional scrollbars)? */
     if (Gestalt(gestaltControlMgrAttr, &mac_gestalts.cntlattr) != noErr)
 	mac_gestalts.cntlattr = 0;
@@ -134,7 +136,7 @@ static void mac_startup(void) {
     /* We've been tested with the Appearance Manager */
     if (mac_gestalts.apprvers != 0)
 	RegisterAppearanceClient();
-    
+
     menuBar = GetNewMBar(128);
     if (menuBar == NULL)
 	fatalbox("Unable to create menu bar.");
