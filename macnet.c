@@ -1,4 +1,4 @@
-/* $Id: macnet.c,v 1.1.2.4 1999/04/06 23:18:49 ben Exp $ */
+/* $Id: macnet.c,v 1.1.2.5 1999/04/07 22:43:35 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -139,8 +139,8 @@ static pascal void macnet_resolved_upp(hostInfo *, char *);
 static void macnet_completed_open_upp(TCPiopb *);
 static void macnet_completed_send_upp(TCPiopb *);
 static void macnet_completed_close_upp(TCPiopb *);
-static pascal void macnet_asr_upp(StreamPtr, unsigned short, Ptr,
-				  unsigned short, ICMPReport *);
+/* ASRs apparently get their A5 world set up for them. */
+#define macnet_asr_upp macnet_asr
 #endif
 
 /*
@@ -172,7 +172,7 @@ static OSErr macnet_init(void) {
     macnet_eventq.qHead = macnet_eventq.qTail = NULL;
     macnet_freeq.qFlags = 0;
     macnet_freeq.qHead = macnet_eventq.qTail = NULL;
-    eventblock = smalloc(NUM_EVENTS * sizeof(NetEvent));
+    eventblock = smalloc(NUM_EVENTS * sizeof(*eventblock));
     for (i = 0; i < NUM_EVENTS; i++)
 	Enqueue(&eventblock[i].qelem, &macnet_freeq);
     mtcp_initted = TRUE;
@@ -189,7 +189,7 @@ Socket *net_open(Session *s, char *host, int port) {
      * First, get hold of all the memory we'll need (a lot of the
      * later stuff happens at interrupt time)
      */
-    sock = smalloc(sizeof(struct Socket));
+    sock = smalloc(sizeof(*sock));
     memset(sock, 0, sizeof(*sock));
     tcpbuf = smalloc(TCPBUF_SIZE);
 
@@ -257,10 +257,6 @@ static pascal void macnet_resolved(hostInfo *hi, char *cookie) {
 	sock->iopb.csParam.open.remoteHost = sock->hostinfo.addr[0]; /*XXX*/
 	sock->iopb.csParam.open.remotePort = sock->port;
 	sock->iopb.csParam.open.tosFlags = lowDelay;
-	sock->iopb.csParam.open.dontFrag = 0;
-	sock->iopb.csParam.open.timeToLive = 0; /* default */
-	sock->iopb.csParam.open.security = 0;
-	sock->iopb.csParam.open.optionCnt = 0;
 	sock->iopb.csParam.open.userDataPtr = (char *)sock;
 	err = PBControlAsync((ParmBlkPtr)&sock->iopb);
 	if (err != noErr)
@@ -295,20 +291,6 @@ static void macnet_completed_open(TCPiopb *iopb) {
 	break;
     }
 }
-
-#if TARGET_CPU_68K && !TARGET_RT_CFM
-static pascal void macnet_asr_upp(StreamPtr tcpstream,
-				  unsigned short eventcode, Ptr cookie,
-				  unsigned short terminreason, 
-				  ICMPReport *icmpmsg) {
-    Socket *sock = (Socket *)cookie;
-    long olda5;
-
-    olda5 = SetA5(sock->a5);
-    macnet_asr(tcpstream, eventcode, cookie, terminreason, icmpmsg);
-    SetA5(olda5);
-}
-#endif
 
 static pascal void macnet_asr(StreamPtr tcpstream, unsigned short eventcode,
 			      Ptr cookie, unsigned short terminreason,
