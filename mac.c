@@ -1,4 +1,4 @@
-/* $Id: mac.c,v 1.1.2.17 1999/03/21 23:23:42 ben Exp $ */
+/* $Id: mac.c,v 1.1.2.18 1999/03/27 15:39:45 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -73,8 +73,6 @@ static void mac_closewindow(WindowPtr);
 static void mac_zoomwindow(WindowPtr, short);
 static void mac_shutdown(void);
 
-static void mac_newsession(void);
-
 struct mac_windows {
     WindowPtr terminal; /* XXX: Temporary */
     WindowPtr about;
@@ -118,6 +116,9 @@ static void mac_startup(void) {
     /* Mac OS 8.5 Control Manager (proportional scrollbars)? */
     if (Gestalt(gestaltControlMgrAttr, &mac_gestalts.cntlattr) != noErr)
 	mac_gestalts.cntlattr = 0;
+    /* Mac OS 8.5 Window Manager? */
+    if (Gestalt(gestaltWindowMgrAttr, &mac_gestalts.windattr) != noErr)
+	mac_gestalts.windattr = 0;
 
     /* We've been tested with the Appearance Manager */
     if (mac_gestalts.apprvers != 0)
@@ -139,7 +140,6 @@ static void mac_startup(void) {
 static void mac_eventloop(void) {
     Boolean gotevent;
     EventRecord event;
-    int i;
     RgnHandle cursrgn;
 
     cursrgn = NewRgn();
@@ -288,7 +288,6 @@ static int mac_windowtype(WindowPtr window) {
  * Handle a key press
  */
 static void mac_keypress(EventRecord *event) {
-    char key;
     WindowPtr window;
 
     if (event->what == keyDown && (event->modifiers & cmdKey)) {

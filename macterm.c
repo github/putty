@@ -1,4 +1,4 @@
-/* $Id: macterm.c,v 1.1.2.28 1999/03/23 00:43:46 ben Exp $ */
+/* $Id: macterm.c,v 1.1.2.29 1999/03/27 15:39:45 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -88,7 +88,7 @@ static pascal void mac_set_attr_mask(short, short, GDHandle, long);
 static int mac_keytrans(struct mac_session *, EventRecord *, unsigned char *);
 static void text_click(struct mac_session *, EventRecord *);
 
-#ifdef USES_ROUTINE_DESCRIPTORS
+#if TARGET_RT_MAC_CFM
 static RoutineDescriptor mac_scrolltracker_upp =
     BUILD_ROUTINE_DESCRIPTOR(uppControlActionProcInfo,
 			     (ProcPtr)mac_scrolltracker);
@@ -98,11 +98,11 @@ static RoutineDescriptor do_text_for_device_upp =
 static RoutineDescriptor mac_set_attr_mask_upp =
     BUILD_ROUTINE_DESCRIPTOR(uppDeviceLoopDrawingProcInfo,
 			     (ProcPtr)mac_set_attr_mask);
-#else /* not USES_ROUTINE_DESCRIPTORS */
+#else /* not TARGET_RT_MAC_CFM */
 #define mac_scrolltracker_upp	mac_scrolltracker
 #define do_text_for_device_upp	do_text_for_device
 #define mac_set_attr_mask_upp	mac_set_attr_mask
-#endif /* not USES_ROUTINE_DESCRIPTORS */
+#endif /* not TARGET_RT_MAC_CFM */
 
 /*
  * Temporary hack till I get the terminal emulator supporting multiple
@@ -143,7 +143,6 @@ static void display_resource(unsigned long type, short id) {
 
 void mac_newsession(void) {
     struct mac_session *s;
-    int i;
     UInt32 starttime;
     char msg[128];
 
@@ -225,20 +224,29 @@ static void mac_initpalette(struct mac_session *s) {
 }
 
 /*
- * I don't think this is (a) safe or (b) a good way to do this.
+ * Set the background colour of the window correctly.  Should be
+ * called whenever the default background changes.
  */
 static void mac_adjustwinbg(struct mac_session *s) {
 
-    if (s->wctab == NULL)
-	s->wctab = (WCTabHandle)NewHandle(sizeof(**s->wctab));
-    if (s->wctab == NULL)
-	return; /* do without */
-    (*s->wctab)->wCSeed = 0;
-    (*s->wctab)->wCReserved = 0;
-    (*s->wctab)->ctSize = 0;
-    (*s->wctab)->ctTable[0].value = wContentColor;
-    (*s->wctab)->ctTable[0].rgb = (*s->palette)->pmInfo[DEFAULT_BG].ciRGB;
-    SetWinColor(s->window, s->wctab);
+#if 0 /* XXX doesn't link (at least for 68k) */
+    if (mac_gestalts.windattr & gestaltWindowMgrPresent)
+	SetWindowContentColor(s->window,
+			      &(*s->palette)->pmInfo[DEFAULT_BG].ciRGB);
+    else
+#endif
+    {
+	if (s->wctab == NULL)
+	    s->wctab = (WCTabHandle)NewHandle(sizeof(**s->wctab));
+	if (s->wctab == NULL)
+	    return; /* do without */
+	(*s->wctab)->wCSeed = 0;
+	(*s->wctab)->wCReserved = 0;
+	(*s->wctab)->ctSize = 0;
+	(*s->wctab)->ctTable[0].value = wContentColor;
+	(*s->wctab)->ctTable[0].rgb = (*s->palette)->pmInfo[DEFAULT_BG].ciRGB;
+	SetWinColor(s->window, s->wctab);
+    }
 }
 
 /*
@@ -479,7 +487,6 @@ void mac_keyterm(WindowPtr window, EventRecord *event) {
     unsigned char buf[20];
     int len;
     struct mac_session *s;
-    int i;
 
     s = (struct mac_session *)GetWRefCon(window);
     len = mac_keytrans(s, event, buf);
@@ -702,8 +709,6 @@ struct do_text_args {
 void do_text(struct mac_session *s, int x, int y, char *text, int len,
 	     unsigned long attr) {
     int style = 0;
-    int bgcolour, fgcolour;
-    RGBColor rgbfore, rgbback;
     struct do_text_args a;
     RgnHandle textrgn;
 

@@ -7,7 +7,7 @@ Echo "# `Date -t` ----- Build of {program}."
 Echo "# `Date -t` ----- Analyzing dependencies."
 Begin
 	Echo "Set Echo 1"
-	Make {"Parameters"} -f "{makefile}"
+	Make "{program}" {"Parameters"} -f "{makefile}"
 End > "{program}".makeout
 Echo "# `Date -t` ----- Executing build commands."
 "{program}".makeout

@@ -15,6 +15,7 @@ struct mac_gestalts {
     long qdvers;
     long apprvers;
     long cntlattr;
+    long windattr;
 };
 
 extern struct mac_gestalts mac_gestalts;
@@ -33,3 +34,9 @@ extern void mac_menuterm(WindowPtr, short, short);
 extern void mac_loadconfig(Config *);
 
 #endif
+
+/*
+ * Local Variables:
+ * c-file-style: "simon"
+ * End:
+ */
