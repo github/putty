@@ -4,7 +4,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-
+#include <string.h>
 #include "putty.h"
 
 static unsigned long *text;	       /* buffer of text on terminal screen */
