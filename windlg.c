@@ -152,6 +152,7 @@ static void save_settings (char *section, int do_host) {
     wpps (sesskey, "Cipher", cfg.cipher == CIPHER_BLOWFISH ? "blowfish" :
                              cfg.cipher == CIPHER_DES ? "des" : "3des");
     wppi (sesskey, "AuthTIS", cfg.try_tis_auth);
+    wppi (sesskey, "SSHCompression", cfg.ssh_compression);
     wppi (sesskey, "RFCEnviron", cfg.rfc_environ);
     wppi (sesskey, "BackspaceIsDelete", cfg.bksp_is_delete);
     wppi (sesskey, "RXVTHomeEnd", cfg.rxvt_homeend);
@@ -288,6 +289,7 @@ static void load_settings (char *section, int do_host) {
 	    cfg.cipher = CIPHER_3DES;
     }
     gppi (sesskey, "AuthTIS", 0, &cfg.try_tis_auth);
+    gppi (sesskey, "SSHCompression", 0, &cfg.ssh_compression);
     gppi (sesskey, "RFCEnviron", 0, &cfg.rfc_environ);
     gppi (sesskey, "BackspaceIsDelete", 1, &cfg.bksp_is_delete);
     gppi (sesskey, "RXVTHomeEnd", 0, &cfg.rxvt_homeend);
@@ -956,6 +958,7 @@ static int CALLBACK SshProc (HWND hwnd, UINT msg,
 
 			  IDC3_CIPHER3DES);
 	CheckDlgButton (hwnd, IDC3_AUTHTIS, cfg.try_tis_auth);
+	CheckDlgButton (hwnd, IDC3_COMPRESS, cfg.ssh_compression);
 	break;
       case WM_COMMAND:
 	switch (LOWORD(wParam)) {
@@ -991,6 +994,11 @@ static int CALLBACK SshProc (HWND hwnd, UINT msg,
 	    if (HIWORD(wParam) == BN_CLICKED ||
 		HIWORD(wParam) == BN_DOUBLECLICKED)
 		cfg.try_tis_auth = IsDlgButtonChecked (hwnd, IDC3_AUTHTIS);
+	    break;
+	  case IDC3_COMPRESS:
+	    if (HIWORD(wParam) == BN_CLICKED ||
+	        HIWORD(wParam) == BN_DOUBLECLICKED)
+		cfg.ssh_compression = IsDlgButtonChecked (hwnd, IDC3_COMPRESS);
 	    break;
 	}
 	break;
@@ -1423,6 +1431,8 @@ void do_defaults (char *session) {
 }
 
 void logevent (char *string) {
+    if (IS_SCP && (scp_flags & SCP_VERBOSE) != 0)
+	fprintf(stderr, "%s\n", string);
     if (nevents >= negsize) {
 	negsize += 64;
 	events = srealloc (events, negsize * sizeof(*events));

@@ -62,3 +62,10 @@ int random_byte(void);
 void random_add_noise(void *noise, int length);
 
 void logevent (char *);
+
+int ssh_compression_init(int);
+void ssh_compress(unsigned char *src, unsigned int srclen,
+                  unsigned char **dest, unsigned int *destlen);
+void ssh_decompress(unsigned char *src, unsigned int srclen,
+                    unsigned char **dest, unsigned int *destlen);
+

@@ -134,6 +134,7 @@ typedef struct {
     int nopty;
     enum { CIPHER_3DES, CIPHER_BLOWFISH, CIPHER_DES } cipher;
     int try_tis_auth;
+    int ssh_compression;
     /* Telnet options */
     char termtype[32];
     char termspeed[32];
@@ -193,6 +194,14 @@ GLOBAL int default_protocol;
 GLOBAL int default_port;
 
 struct RSAKey;			       /* be a little careful of scope */
+
+/*
+ * Needed for PuTTY Secure Copy
+ */
+#define SCP_FLAG	1
+#define SCP_VERBOSE	2
+#define IS_SCP ((scp_flags & SCP_FLAG) != 0)
+GLOBAL int scp_flags;
 
 /*
  * Exports from window.c.

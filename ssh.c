@@ -15,10 +15,6 @@
 #define TRUE 1
 #endif
 
-#define logevent(s) { logevent(s); \
-                      if (IS_SCP && (scp_flags & SCP_VERBOSE) != 0) \
-                      fprintf(stderr, "%s\n", s); }
-
 #define SSH_MSG_DISCONNECT	1
 #define SSH_SMSG_PUBLIC_KEY	2
 #define SSH_CMSG_SESSION_KEY	3
@@ -38,11 +34,13 @@
 #define SSH_CMSG_EXIT_CONFIRMATION	33
 #define SSH_MSG_IGNORE		32
 #define SSH_MSG_DEBUG		36
+#define SSH_CMSG_REQUEST_COMPRESSION	37
 #define SSH_CMSG_AUTH_TIS	39
 #define SSH_SMSG_AUTH_TIS_CHALLENGE	40
 #define SSH_CMSG_AUTH_TIS_RESPONSE	41
 
 #define SSH_AUTH_TIS		5
+#define COMPRESSION_LEVEL	5
 
 #define GET_32BIT(cp) \
     (((unsigned long)(unsigned char)(cp)[0] << 24) | \
@@ -80,7 +78,7 @@ static SOCKET s = INVALID_SOCKET;
 
 static unsigned char session_key[32];
 static struct ssh_cipher *cipher = NULL;
-int scp_flags = 0;
+static int use_compression = 0;
 void (*ssh_get_password)(const char *prompt, char *str, int maxlen) = NULL;
 
 static char *savedhost;
@@ -155,6 +153,24 @@ static void ssh_protocol(unsigned char *in, int inlen, int ispkt);
 static void ssh_size(void);
 
 
+static void pktalloc(struct Packet *pkt, long newlen)
+{
+    if (pkt->maxlen < newlen) {
+	pkt->maxlen = newlen;
+#ifdef MSCRYPTOAPI
+	/* Allocate enough buffer space for extra block
+	 * for MS CryptEncrypt() */
+	pkt->data = (pkt->data == NULL ? malloc(newlen+8) :
+	              realloc(pkt->data, newlen+8));
+#else
+	pkt->data = (pkt->data == NULL ? malloc(newlen) :
+	              realloc(pkt->data, newlen));
+#endif
+	if (!pkt->data)
+	    fatalbox("Out of memory");
+    }
+}
+
 /*
  * Collect incoming data in the incoming packet buffer.
  * Decihper and verify the packet when it is completely read.
@@ -192,22 +208,9 @@ next_packet:
 
     pad = 8 - (len % 8);
     biglen = len + pad;
-    pktin.length = len - 5;
 
-    if (pktin.maxlen < biglen) {
-	pktin.maxlen = biglen;
-#ifdef MSCRYPTOAPI
-	/* Allocate enough buffer space for extra block
-	 * for MS CryptEncrypt() */
-	pktin.data = (pktin.data == NULL ? malloc(biglen+8) :
-	              realloc(pktin.data, biglen+8));
-#else
-	pktin.data = (pktin.data == NULL ? malloc(biglen) :
-	              realloc(pktin.data, biglen));
-#endif
-	if (!pktin.data)
-	    fatalbox("Out of memory");
-    }
+    if (pktin.maxlen < biglen)
+	pktalloc(&pktin, biglen);
 
     to_read = biglen;
     p = pktin.data;
@@ -228,13 +231,21 @@ next_packet:
     if (cipher)
 	cipher->decrypt(pktin.data, biglen);
 
-    pktin.type = pktin.data[pad];
-    pktin.body = pktin.data + pad + 1;
-
     realcrc = crc32(pktin.data, biglen-4);
     gotcrc = GET_32BIT(pktin.data+biglen-4);
     if (gotcrc != realcrc) {
 	fatalbox("Incorrect CRC received on packet");
+    }
+
+    if (use_compression) {
+	ssh_decompress(pktin.data + pad, len - 4, &p, &len);
+	pktin.length = len - 1;
+	pktin.type = p[0];
+	pktin.body = p + 1;
+    } else {
+	pktin.length = len - 5;
+	pktin.type = pktin.data[pad];
+	pktin.body = pktin.data + pad + 1;
     }
 
     if (pktin.type == SSH_SMSG_STDOUT_DATA ||
@@ -281,20 +292,8 @@ static void s_wrpkt_start(int type, int len) {
     biglen = len + pad;
 
     pktout.length = len-5;
-    if (pktout.maxlen < biglen) {
-	pktout.maxlen = biglen;
-#ifdef MSCRYPTOAPI
-	/* Allocate enough buffer space for extra block
-	 * for MS CryptEncrypt() */
-	pktout.data = (pktout.data == NULL ? malloc(biglen+12) :
-		       realloc(pktout.data, biglen+12));
-#else
-	pktout.data = (pktout.data == NULL ? malloc(biglen+4) :
-		       realloc(pktout.data, biglen+4));
-#endif
-	if (!pktout.data)
-	    fatalbox("Out of memory");
-    }
+    if (pktout.maxlen < biglen + 4)
+	pktalloc(&pktout, biglen + 4);
 
     pktout.type = type;
     pktout.body = pktout.data+4+pad+1;
@@ -307,8 +306,21 @@ static void s_wrpkt(void) {
     len = pktout.length + 5;	       /* type and CRC */
     pad = 8 - (len%8);
     biglen = len + pad;
-
     pktout.body[-1] = pktout.type;
+
+    if (use_compression) {
+	unsigned char *p;
+	unsigned int n;
+	pktout.body = NULL;
+	ssh_compress(pktout.data + 4 + pad, pktout.length + 1, &p, &n);
+	len = n + 4;
+	pad = 8 - (len%8);
+	biglen = len + pad;
+	if (pktout.maxlen < biglen + 4)
+	    pktalloc(&pktout, biglen + 4);
+	memcpy(pktout.data + 4 + pad, p, n);
+    }
+
     for (i=0; i<pad; i++)
 	pktout.data[i+4] = random_byte();
     crc = crc32(pktout.data+4, biglen-4);
@@ -852,6 +864,21 @@ static int do_ssh_login(unsigned char *in, int inlen, int ispkt)
     }
 
     logevent("Authentication successful");
+
+    if (cfg.ssh_compression &&
+        ssh_compression_init(COMPRESSION_LEVEL)) {
+	send_packet(SSH_CMSG_REQUEST_COMPRESSION,
+	            PKT_INT, COMPRESSION_LEVEL, PKT_END);
+	crWaitUntil(ispkt);
+	if (pktin.type == SSH_SMSG_SUCCESS) {
+	    use_compression = 1;
+	    logevent("Enabled SSH packet compression");
+	} else if (pktin.type == SSH_SMSG_FAILURE) {
+	    logevent("Server does not support packet compression");
+	} else {
+	    fatalbox("Strange packet received, type %d", pktin.type);
+	}
+    }
 
     crFinish(1);
 }
