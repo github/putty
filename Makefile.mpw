@@ -1,8 +1,8 @@
-# $Id: PuTTY.make,v 1.1.2.8 1999/03/07 23:15:56 ben Exp $
+# $Id: Makefile.mpw,v 1.1.2.1 1999/03/13 16:51:46 ben Exp $
 # This is the Makefile for building PuTTY for the Mac OS.
 # Users of non-Mac systems will see some pretty strange characters around.
 
-MAKEFILE     = PuTTY.make
+MAKEFILE     = Makefile.mpw
 ¥MondoBuild¥ = {MAKEFILE}  # Make blank to avoid rebuilds when makefile is modified
 Includes     =
 Sym¥68K      = 
