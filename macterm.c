@@ -1,4 +1,4 @@
-/* $Id: macterm.c,v 1.1.2.19 1999/03/13 18:23:24 ben Exp $ */
+/* $Id: macterm.c,v 1.1.2.20 1999/03/14 13:08:43 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -300,7 +300,6 @@ static void text_click(struct mac_session *s, EventRecord *event) {
 
 void write_clip(void *data, int len) {
     
-    SysBeep(30);
     if (ZeroScrap() != noErr)
 	return;
     PutScrap(len, 'TEXT', data);

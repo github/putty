@@ -1376,18 +1376,18 @@ static void sel_spread (void) {
 void term_mouse (Mouse_Button b, Mouse_Action a, int x, int y) {
     unsigned long *selpoint;
     
-    if (y<0) y = 0;
-    if (y>=rows) y = rows-1;
-    if (x<0) {
-        if (y > 0) {
-            x = cols-1;
-            y--;
-        } else
-            x = 0;
-    }
-    if (x>=cols) x = cols-1;
+    if (x < 0) {
+	x = cols - 1;
+	y--;
+    } else if (x >= cols)
+	x = cols - 1;
 
-    selpoint = disptop + y * (cols+1) + x;
+    selpoint = disptop + y * (cols + 1) + x;
+    if (selpoint < sbtop)
+	selpoint = sbtop;
+    else if (selpoint > scrtop + rows * (cols + 1) - 1)
+	/* XXX put this in a variable? */
+	selpoint = scrtop + rows * (cols + 1) - 1;
 
     if (b == MB_SELECT && a == MA_CLICK) {
 	deselect();
