@@ -1,4 +1,4 @@
-$Id: README.mac,v 1.1.2.3 1999/03/30 19:46:44 ben Exp $
+$Id: README.mac,v 1.1.2.4 1999/09/01 22:12:48 ben Exp $
 
 Information about PuTTY for the Mac OS
 -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -11,10 +11,13 @@ Known bugs:
    Things can happen owing to a bug in do_scroll.  This can be fixed when I
    have an easy way to test it.
  * Display is far too slow.
- * Fails to work on systems without Color QuickDraw.
+ * Fails to work on systems without Color QuickDraw. [FIXED]
  * Real bold doesn't compensate for changing character widths without Color
-   QuickDraw.
+   QuickDraw. [MAYBE FIXED]
+ * Scrolling appears to be shafted on Original QuickDraw.
  * ResEdit 'TMPL' resource seems to be broken.
+ * sshsha.c and sshmd5.c cause a stack overflow in Apple's PowerPC C compiler 
+   unless optimisation is entirely disabled.
 
 Features we need (and aren't entirely obvious):
 
