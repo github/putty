@@ -1,4 +1,4 @@
-/* $Id: macterm.c,v 1.1.2.23 1999/03/14 20:43:51 ben Exp $ */
+/* $Id: macterm.c,v 1.1.2.24 1999/03/15 14:22:45 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -45,6 +45,7 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "macresid.h"
 #include "putty.h"
@@ -70,10 +71,12 @@ struct mac_session {
     WindowPtr		window;
     PaletteHandle	palette;
     ControlHandle	scrollbar;
+    WCTabHandle		wctab;
 };
 
 static void mac_initfont(struct mac_session *);
 static void mac_initpalette(struct mac_session *);
+static void mac_adjustwinbg(struct mac_session *);
 static void mac_adjustsize(struct mac_session *, int, int);
 static pascal void mac_scrolltracker(ControlHandle, short);
 static pascal void do_text_for_device(short, short, GDHandle, long);
@@ -128,6 +131,7 @@ void mac_newsession(void) {
     mac_loadconfig(&cfg);
 /*    back = &loop_backend; */
     s = smalloc(sizeof(*s));
+    memset(s, 0, sizeof(*s));
     onlysession = s;
 	
     /* XXX: Own storage management? */
@@ -189,7 +193,6 @@ static void mac_adjustsize(struct mac_session *s, int newrows, int newcols) {
 }
 
 static void mac_initpalette(struct mac_session *s) {
-    WinCTab ct;
   
     if (mac_gestalts.qdvers == gestaltOriginalQD)
 	return;
@@ -197,22 +200,24 @@ static void mac_initpalette(struct mac_session *s) {
     if (s->palette == NULL)
 	fatalbox("Unable to create palette");
     CopyPalette(cfg.colours, s->palette, 0, 0, (*cfg.colours)->pmEntries);
+    mac_adjustwinbg(s);
 }
 
 /*
  * I don't think this is (a) safe or (b) a good way to do this.
  */
-static void mac_updatewinbg(struct mac_session *s) {
-    WinCTab ct;
-    WCTabPtr ctp = &ct;
-    WCTabHandle cth = &ctp;
+static void mac_adjustwinbg(struct mac_session *s) {
 
-    ct.wCSeed = 0;
-    ct.wCReserved = 0;
-    ct.ctSize = 1;
-    ct.ctTable[0].value = wContentColor;
-    ct.ctTable[0].rgb = (*s->palette)->pmInfo[16].ciRGB;
-    SetWinColor(s->window, cth);
+    if (s->wctab == NULL)
+	s->wctab = (WCTabHandle)NewHandle(sizeof(**s->wctab));
+    if (s->wctab == NULL)
+	return; /* do without */
+    (*s->wctab)->wCSeed = 0;
+    (*s->wctab)->wCReserved = 0;
+    (*s->wctab)->ctSize = 0;
+    (*s->wctab)->ctTable[0].value = wContentColor;
+    (*s->wctab)->ctTable[0].rgb = (*s->palette)->pmInfo[DEFAULT_BG].ciRGB;
+    SetWinColor(s->window, s->wctab);
 }
 
 /*
@@ -825,6 +830,8 @@ void palette_set(int n, int r, int g, int b) {
     SetEntryColor(s->palette, first[n], &col);
     if (first[n] >= 18)
 	SetEntryColor(s->palette, first[n]+1, &col);
+    if (first[n] == DEFAULT_BG)
+	mac_adjustwinbg(s);
     ActivatePalette(s->window);
 }
 
@@ -837,6 +844,7 @@ void palette_reset(void) {
     if (mac_gestalts.qdvers == gestaltOriginalQD)
 	return;
     CopyPalette(cfg.colours, s->palette, 0, 0, (*cfg.colours)->pmEntries);
+    mac_adjustwinbg(s);
     ActivatePalette(s->window);
     /* Palette Manager will generate update events as required. */
 }
