@@ -1,4 +1,4 @@
-/* $Id: mac.c,v 1.1.2.21 1999/03/29 23:55:06 ben Exp $ */
+/* $Id: mac.c,v 1.1.2.22 1999/04/01 21:26:44 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -35,6 +35,7 @@
 #include <Menus.h>
 #include <TextEdit.h>
 #include <Appearance.h>
+#include <CodeFragments.h>
 #include <Dialogs.h>
 #include <Devices.h>
 #include <DiskInit.h>
@@ -76,7 +77,6 @@ static void mac_shutdown(void);
 #pragma noreturn (mac_shutdown)
 
 struct mac_windows {
-    WindowPtr terminal; /* XXX: Temporary */
     WindowPtr about;
     WindowPtr licence;
 };
@@ -118,7 +118,7 @@ static void mac_startup(void) {
 	else
 	    mac_gestalts.apprvers = 0;
     /* Paranoia: Did we manage to pull in AppearanceLib? */
-    if (&RegisterAppearanceClient == NULL)
+    if (&RegisterAppearanceClient == kUnresolvedCFragSymbolAddress)
 	mac_gestalts.apprvers = 0;
     /* Mac OS 8.5 Control Manager (proportional scrollbars)? */
     if (Gestalt(gestaltControlMgrAttr, &mac_gestalts.cntlattr) != noErr)
@@ -139,7 +139,6 @@ static void mac_startup(void) {
     mac_adjustmenus();
     DrawMenuBar();
     InitCursor();
-    windows.terminal = NULL;
     windows.about = NULL;
     windows.licence = NULL;
 }

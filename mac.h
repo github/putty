@@ -9,8 +9,6 @@
 #include <Events.h>
 #include <MacWindows.h>
 
-extern long mac_qdversion;
-
 struct mac_gestalts {
     long qdvers;
     long apprvers;
