@@ -1,4 +1,4 @@
-/* $Id: opentpt.c,v 1.1.2.2 1999/08/02 22:32:39 ben Exp $ */
+/* $Id: opentpt.c,v 1.1.2.3 1999/09/01 22:24:41 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -72,9 +72,11 @@ static OTConfiguration *otpt_config = kOTInvalidConfigurationPtr;
 static int otpt_init(void) {
     OSErr err;
 
+#if TARGET_RT_MAC_CFM
     /* Check that the OpenTransport libraries were there (really just ppc) */
     if (&InitOpenTransport == kUnresolvedCFragSymbolAddress)
 	return 1;
+#endif
     err = InitOpenTransport();
     if (err != noErr)
 	return err;
@@ -84,6 +86,10 @@ static int otpt_init(void) {
 	return 1;
     return 0;
 }
+
+/* Stuff below here is only needed if you actually have Open Transport. */
+/* #pragma segment OpenTpt */
+/* Last I looked, this only produced a 1.5k segment, which isn't worth it. */
 
 /*
  * This should only be called once all the connections have been
@@ -108,11 +114,12 @@ static void *otpt_open(Session *sess, char const *host, int port) {
     s->ep = OTOpenEndpoint(OTCloneConfiguration(otpt_config), 0, NULL, &err);
     if (err != kOTNoError || s->ep == NULL) goto splat;
 
+    /* Set up a system-task-time event handler (scheduled by the notifier) */
+    s->eventhandler = OTCreateSystemTask(&otpt_rcvevent, (void *)s);
+    if (s->eventhandler == 0) goto splat;
     /* Attach our notifier function (note that this is _not_ a UPP) */
     err = OTInstallNotifier(s->ep, otpt_notifier, (void *)s);
     if (err != kOTNoError) goto splat;
-    s->eventhandler = OTCreateSystemTask(&otpt_rcvevent, (void *)s);
-    if (s->eventhandler == 0) goto splat;
 
     /* Bind to any local address */
     err = OTBind(s->ep, NULL, NULL);
@@ -185,7 +192,7 @@ static void otpt_close(void *sock) {
 /*
  * This should take a socket in any state and undo it all, freeing any
  * allocated memory and generally making it safe to forget about it.
- * It should onlu be called at system task time.
+ * It should only be called at system task time.
  */
 
 static void otpt_destroy(void *sock) {
@@ -298,7 +305,7 @@ static void otpt_sendevent(struct otpt_socket *s, Net_Event_Type type) {
 
 /*
  * Pull one or more network events off a socket's queue and handle
- * them.  Keep gong until we run out (events may be getting enqueued
+ * them.  Keep going until we run out (events may be getting enqueued
  * while we're running).  This is mildly evil as it'll prevent any
  * other task running if we're under heavy load.
  */
