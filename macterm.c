@@ -1,4 +1,4 @@
-/* $Id: macterm.c,v 1.1.2.25 1999/03/16 20:27:31 ben Exp $ */
+/* $Id: macterm.c,v 1.1.2.26 1999/03/18 00:04:34 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -35,6 +35,7 @@
 #include <Gestalt.h>
 #include <MacMemory.h>
 #include <MacWindows.h>
+#include <MixedMode.h>
 #include <Palettes.h>
 #include <Quickdraw.h>
 #include <QuickdrawText.h>
@@ -86,6 +87,22 @@ static pascal void mac_set_attr_mask(short, short, GDHandle, long);
 static int mac_keytrans(struct mac_session *, EventRecord *, unsigned char *);
 static void text_click(struct mac_session *, EventRecord *);
 
+#ifdef USES_ROUTINE_DESCRIPTORS
+static RoutineDescriptor mac_scrolltracker_upp =
+    BUILD_ROUTINE_DESCRIPTOR(uppControlActionProcInfo,
+			     (ProcPtr)mac_scrolltracker);
+static RoutineDescriptor do_text_for_device_upp =
+    BUILD_ROUTINE_DESCRIPTOR(uppDeviceLoopDrawingProcInfo,
+			     (ProcPtr)do_text_for_device);
+static RoutineDescriptor mac_set_attr_mask_upp =
+    BUILD_ROUTINE_DESCRIPTOR(uppDeviceLoopDrawingProcInfo,
+			     (ProcPtr)mac_set_attr_mask);
+#else /* not USES_ROUTINE_DESCRIPTORS */
+#define mac_scrolltracker_upp	mac_scrolltracker
+#define do_text_for_device_upp	do_text_for_device
+#define mac_set_attr_mask_upp	mac_set_attr_mask
+#endif /* not USES_ROUTINE_DESCRIPTORS */
+
 /*
  * Temporary hack till I get the terminal emulator supporting multiple
  * sessions
@@ -131,7 +148,7 @@ void mac_newsession(void) {
 
     /* This should obviously be initialised by other means */
     mac_loadconfig(&cfg);
-/*    back = &loop_backend; */
+    back = &loop_backend;
     s = smalloc(sizeof(*s));
     memset(s, 0, sizeof(*s));
     onlysession = s;
@@ -285,7 +302,7 @@ void mac_clickterm(WindowPtr window, EventRecord *event) {
 	  case kControlDownButtonPart:
 	  case kControlPageUpPart:
 	  case kControlPageDownPart:
-	    TrackControl(control, mouse, mac_scrolltracker);
+	    TrackControl(control, mouse, &mac_scrolltracker_upp);
 	    break;
 	}
     } else {
@@ -434,10 +451,7 @@ void mac_keyterm(WindowPtr window, EventRecord *event) {
 
     s = (struct mac_session *)GetWRefCon(window);
     len = mac_keytrans(s, event, buf);
-    /* XXX: I can't get the loopback backend to link, so we'll do this: */
-/*    back->send((char *)buf, len); */
-    for (i = 0; i < len; i++)
-	inbuf_putc(buf[i]);
+    back->send((char *)buf, len);
     term_out();
     term_update();
 }
@@ -687,7 +701,7 @@ void do_text(struct mac_session *s, int x, int y, char *text, int len,
     SetFractEnable(FALSE); /* We want characters on pixel boundaries */
     textrgn = NewRgn();
     RectRgn(textrgn, &a.textrect);
-    DeviceLoop(textrgn, do_text_for_device, (long)&a, 0);
+    DeviceLoop(textrgn, &do_text_for_device_upp, (long)&a, 0);
     DisposeRgn(textrgn);
     /* Tell the window manager about it in case this isn't an update */
     ValidRect(&a.textrect);
@@ -766,7 +780,7 @@ struct mac_session *get_ctx(void) {
     struct mac_session *s = onlysession;
 
     attr_mask = ATTR_INVALID;
-    DeviceLoop(s->window->visRgn, mac_set_attr_mask, (long)s, 0);
+    DeviceLoop(s->window->visRgn, &mac_set_attr_mask_upp, (long)s, 0);
     return s;
 }
 

@@ -1,4 +1,4 @@
-/* $Id: testback.c,v 1.1.2.1 1999/03/07 23:23:38 ben Exp $ */
+/* $Id: testback.c,v 1.1.2.2 1999/03/18 00:04:34 ben Exp $ */
 /*
  * Copyright (c) 1999 Simon Tatham
  * Copyright (c) 1999 Ben Harris
@@ -35,7 +35,7 @@
 static char *null_init(char *, int, char **);
 static int null_msg(void);
 static void null_send(char *, int);
-static void loop_send(*char *, int);
+static void loop_send(char *, int);
 static void null_size(void);
 static void null_special(Telnet_Special);
 
@@ -61,7 +61,7 @@ static void null_send(char *buf, int len) {
 
 }
 
-static void lo_send (char *buf, int len) {
+static void loop_send (char *buf, int len) {
     while (len--) {
 	int new_head = (inbuf_head + 1) & INBUF_MASK;
 	int c = (unsigned char) *buf;
