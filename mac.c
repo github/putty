@@ -1,4 +1,4 @@
-/* $Id: mac.c,v 1.1.2.13 1999/03/09 00:09:50 ben Exp $ */
+/* $Id: mac.c,v 1.1.2.14 1999/03/11 21:40:31 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -75,6 +75,14 @@ static void mac_shutdown(void);
 
 static void mac_newsession(void);
 
+struct mac_windows {
+    WindowPtr terminal; /* XXX: Temporary */
+    WindowPtr about;
+    WindowPtr licence;
+};
+
+struct mac_windows windows;
+
 int main (int argc, char **argv) {
 
     mac_startup();
@@ -123,6 +131,9 @@ static void mac_startup(void) {
     mac_adjustmenus();
     DrawMenuBar();
     InitCursor();
+    windows.terminal = NULL;
+    windows.about = NULL;
+    windows.licence = NULL;
 }
 
 static void mac_eventloop(void) {
@@ -228,6 +239,7 @@ static void mac_growwindow(WindowPtr window, EventRecord *event) {
 
 static void mac_activatewindow(WindowPtr window, Boolean active) {
 
+    mac_adjustmenus();
     switch (mac_windowtype(window)) {
       case wTerminal:
 	mac_activateterm(window, active);
@@ -348,7 +360,29 @@ static void mac_zoomwindow(WindowPtr window, short part) {
  * Make the menus look right before the user gets to see them.
  */
 static void mac_adjustmenus(void) {
+    WindowPtr window;
+    MenuHandle menu;
 
+    window = FrontWindow();
+    menu = GetMenuHandle(mApple);
+    EnableItem(menu, 0);
+    EnableItem(menu, iAbout);
+
+    menu = GetMenuHandle(mFile);
+    EnableItem(menu, 0);
+    EnableItem(menu, iNew);
+    EnableItem(menu, iQuit);
+
+    switch (mac_windowtype(window)) {
+      case wTerminal:
+	mac_adjusttermmenus(window);
+	break;
+      default:
+	menu = GetMenuHandle(mEdit);
+	DisableItem(menu, 0);
+	break;
+    }
+    DrawMenuBar();
 }
 
 /*
@@ -386,3 +420,9 @@ void fatalbox(const char *fmt, ...) {
     StopAlert(128, nil);
     exit(1);
 }
+
+/*
+ * Local Variables:
+ * c-file-style: "simon"
+ * End:
+ */

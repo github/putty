@@ -1,4 +1,4 @@
-/* $Id: macresid.h,v 1.1.2.4 1999/02/28 02:38:40 ben Exp $ */
+/* $Id: macresid.h,v 1.1.2.5 1999/03/11 21:40:32 ben Exp $ */
 
 /*
  * macresid.h -- Mac resource IDs
@@ -13,6 +13,7 @@
 /* Menu IDs */
 #define mApple		128
 #define mFile		129
+#define mEdit		130
 
 /* Menu Items */
 /* Apple menu */
@@ -21,6 +22,13 @@
 #define iNew		1
 #define iClose		2
 #define iQuit		4
+/* Edit menu */
+#define iUndo		1
+#define iCut		3
+#define iCopy		4
+#define iPaste		5
+#define iClear		6
+#define iSelectAll	7
 
 /* Window types (and resource IDs) */
 #define wNone		0 /* Dummy value for no window */

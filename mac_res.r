@@ -1,4 +1,4 @@
-/* $Id: mac_res.r,v 1.1.2.8 1999/03/09 00:06:34 ben Exp $ */
+/* $Id: mac_res.r,v 1.1.2.9 1999/03/11 21:40:31 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -244,7 +244,7 @@ resource 'icl8' (130, purgeable) {
 /* Menu bar */
 
 resource 'MBAR' (MBAR_Main, preload) {
-    { mApple, mFile }
+    { mApple, mFile, mEdit }
 };
 
 resource 'MENU' (mApple, preload) {
@@ -270,6 +270,23 @@ resource 'MENU' (mFile, preload) {
 	"Close",		noicon, "W",   nomark, plain,
 	"-",			noicon, nokey, nomark, plain,
 	"Quit",			noicon, "Q",   nomark, plain,
+    }
+};
+
+resource 'MENU' (mEdit, preload) {
+    mEdit,
+    textMenuProc,
+    0b11111111111111111111111111111101,
+    enabled,
+    "Edit",
+    {
+	"Undo",			noicon, "Z",   nomark, plain,
+	"-",			noicon, nokey, nomark, plain,
+	"Cut",			noicon, "X",   nomark, plain,
+	"Copy",			noicon, "C",   nomark, plain,
+	"Paste",		noicon, "V",   nomark, plain,
+	"Clear",		noicon, nokey, nomark, plain,
+	"Select All",		noicon, "A",   nomark, plain,
     }
 };
 
@@ -641,11 +658,11 @@ resource 'pltt' (PREF_pltt, purgeable) {
 
 read 'pTST' (128, "test data", purgeable) "fragment";
 
-type 'cMAP' {
-    hexstring;
+type 'pMAP' {
+    hex string;
 };
 
-resource 'cMAP' (128, "Latin-1 G1 -> Mac OS Roman") {
+resource 'pMAP' (128, "Latin-1 G1 -> Mac OS Roman") {
     $"20 c1 a2 a3 db b4 00 a4 ac a9 bb c7 c2 00 a8 f8"
     $"a1 b1 00 00 ab b5 a6 e1 fc 00 bc c8 00 00 00 c0"
     $"cb e7 e5 cc 80 81 ae 82 e9 83 e6 e8 ed ea eb ec"
@@ -654,6 +671,7 @@ resource 'cMAP' (128, "Latin-1 G1 -> Mac OS Roman") {
     $"00 96 98 97 99 9b 9a d6 bf 9d 9c 9e 9f 00 00 D8"
 };
 
-resource 'cMAP' (129, "DEC line drawing -> Mac OS VT100") {
+resource 'pMAP' (129, "DEC line drawing -> Mac OS VT100") {
     $"d7 bd 09 0c 0d 0a a1 b1 00 0b d2 d3 d4 d5 da e2"
     $"e3 e4 f5 f6 f7 f8 f9 fa fb b2 b3 b9 ad a3 e1"
+};

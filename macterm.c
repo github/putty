@@ -1,4 +1,4 @@
-/* $Id: macterm.c,v 1.1.2.16 1999/03/09 00:09:50 ben Exp $ */
+/* $Id: macterm.c,v 1.1.2.17 1999/03/11 21:40:32 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -38,6 +38,7 @@
 #include <Quickdraw.h>
 #include <QuickdrawText.h>
 #include <Resources.h>
+#include <Scrap.h>
 #include <Sound.h>
 #include <ToolUtils.h>
 
@@ -199,6 +200,28 @@ static void mac_updatewinbg(struct mac_session *s) {
     SetWinColor(s->window, cth);
 }
 
+/*
+ * Enable/disable menu items based on the active terminal window.
+ */
+void mac_adjusttermmenus(WindowPtr window) {
+    struct mac_session *s;
+    MenuHandle menu;
+    long offset;
+
+    s = (struct mac_session *)GetWRefCon(window);
+    menu = GetMenuHandle(mEdit);
+    EnableItem(menu, 0);
+    DisableItem(menu, iUndo);
+    DisableItem(menu, iCut);
+    DisableItem(menu, iCopy);
+    if (GetScrap(NULL, 'TEXT', &offset) == noTypeErr)
+	DisableItem(menu, iPaste);
+    else
+	EnableItem(menu, iPaste);
+    DisableItem(menu, iClear);
+    EnableItem(menu, iSelectAll);
+}
+
 void mac_clickterm(WindowPtr window, EventRecord *event) {
     struct mac_session *s;
     Point mouse;
@@ -251,13 +274,21 @@ static void text_click(struct mac_session *s, EventRecord *event) {
 	lastact = MA_CLICK;
     term_mouse(event->modifiers & shiftKey ? MB_EXTEND : MB_SELECT, lastact,
 	       col, row);
-    while (StillDown()) {
-	/* XXX Do something */
-    }
     lastsess = s;
     lastrow = row;
     lastcol = col;
-    lastwhen = event->when; /* XXX: should be time of mmouse _up_ */
+    while (StillDown()) {
+	GetMouse(&localwhere);
+	col = localwhere.h / font_width;
+	row = localwhere.v / font_height;
+	term_mouse(event->modifiers & shiftKey ? MB_EXTEND : MB_SELECT,
+		   MA_DRAG, col, row);
+	if (row > rows - 1)
+	    term_scroll(0, row - (rows - 1));
+	else if (row < 0)
+	    term_scroll(0, row);
+    }
+    lastwhen = TickCount();
 }
 
 static pascal void mac_scrolltracker(ControlHandle control, short part) {
@@ -754,3 +785,10 @@ void do_scroll(int topline, int botline, int lines) {
     InvalRgn(update);
     DisposeRgn(update);
 }
+
+/*
+ * Emacs magic:
+ * Local Variables:
+ * c-file-style: "simon"
+ * End:
+ */
