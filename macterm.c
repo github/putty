@@ -1,4 +1,4 @@
-/* $Id: macterm.c,v 1.1.2.27 1999/03/21 23:23:42 ben Exp $ */
+/* $Id: macterm.c,v 1.1.2.28 1999/03/23 00:43:46 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -70,6 +70,7 @@
 struct mac_session {
     short		fontnum;
     int			font_ascent;
+    int			font_leading;
     WindowPtr		window;
     PaletteHandle	palette;
     ControlHandle	scrollbar;
@@ -187,9 +188,10 @@ static void mac_initfont(struct mac_session *s) {
     TextFace(cfg.fontisbold ? bold : 0);
     TextSize(cfg.fontheight);
     GetFontInfo(&fi);
-    font_width = fi.widMax;
-    font_height = fi.ascent + fi.descent + fi.leading;
+    font_width = CharWidth('W'); /* Well, it's what NCSA uses. */
     s->font_ascent = fi.ascent;
+    s->font_leading = fi.leading;
+    font_height = s->font_ascent + fi.descent + s->font_leading;
     mac_adjustsize(s, rows, cols);
 }
 
@@ -686,6 +688,7 @@ static void mac_drawgrowicon(struct mac_session *s) {
 struct do_text_args {
     struct mac_session *s;
     Rect textrect;
+    Rect leadrect;
     char *text;
     int len;
     unsigned long attr;
@@ -718,6 +721,12 @@ void do_text(struct mac_session *s, int x, int y, char *text, int len,
     a.text = text;
     a.len = len;
     a.attr = attr;
+    if (s->font_leading > 0)
+	SetRect(&a.leadrect,
+		a.textrect.left, a.textrect.bottom - s->font_leading,
+		a.textrect.right, a.textrect.bottom);
+    else
+	SetRect(&a.leadrect, 0, 0, 0, 0);
     SetPort(s->window);
     TextFont(s->fontnum);
     if (cfg.fontisbold || (attr & ATTR_BOLD) && !cfg.bold_colour)
@@ -783,6 +792,10 @@ static pascal void do_text_for_device(short depth, short devflags,
 	break;
     }
 
+    if (a->attr & ATTR_REVERSE)
+	PaintRect(&a->leadrect);
+    else
+	EraseRect(&a->leadrect);
     MoveTo(a->textrect.left, a->textrect.top + a->s->font_ascent);
     DrawText(a->text, 0, a->len);
 
@@ -963,3 +976,4 @@ void do_scroll(int topline, int botline, int lines) {
  * c-file-style: "simon"
  * End:
  */
+
