@@ -1,4 +1,4 @@
-/* $Id: testback.c,v 1.1.2.3 1999/03/21 23:23:43 ben Exp $ */
+/* $Id: testback.c,v 1.1.2.4 1999/03/28 15:25:45 ben Exp $ */
 /*
  * Copyright (c) 1999 Simon Tatham
  * Copyright (c) 1999 Ben Harris
@@ -28,6 +28,7 @@
 
 /* PuTTY test backends */
 
+#include <stdio.h>
 #include <stdlib.h>
 
 #include "putty.h"
@@ -36,6 +37,7 @@ static char *null_init(char *, int, char **);
 static int null_msg(void);
 static void null_send(char *, int);
 static void loop_send(char *, int);
+static void hexdump_send(char *, int);
 static void null_size(void);
 static void null_special(Telnet_Special);
 
@@ -45,6 +47,10 @@ Backend null_backend = {
 
 Backend loop_backend = {
     null_init, null_msg, loop_send, null_size, null_special
+};
+
+Backend hexdump_backend = {
+    null_init, null_msg, hexdump_send, null_size, null_special
 };
 
 static char *null_init(char *host, int port, char **realhost) {
@@ -62,6 +68,7 @@ static void null_send(char *buf, int len) {
 }
 
 static void loop_send (char *buf, int len) {
+
     while (len--) {
 	int new_head = (inbuf_head + 1) & INBUF_MASK;
 	int c = (unsigned char) *buf;
@@ -74,7 +81,15 @@ static void loop_send (char *buf, int len) {
     term_update();
 }
 
+static void hexdump_send(char *buf, int len) {
+    static char mybuf[10];
+    int mylen;
 
+    while (len--) {
+	mylen = sprintf(mybuf, "%02x\015\012", (unsigned char)*buf++);
+	loop_send(mybuf, mylen);
+    }
+}
 
 static void null_size(void) {
 
@@ -83,3 +98,10 @@ static void null_size(void) {
 static void null_special(Telnet_Special code) {
 
 }
+
+/*
+ * Emacs magic:
+ * Local Variables:
+ * c-file-style: "simon"
+ * End:
+ */

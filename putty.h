@@ -303,6 +303,7 @@ void safefree(void *);
 
 extern Backend null_backend;
 extern Backend loop_backend;
+extern Backend hexdump_backend;
 
 /*
  * Exports from version.c.
