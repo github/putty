@@ -1,15 +1,15 @@
-# $Id: mkputty.mpw,v 1.1.2.6 1999/03/28 15:23:37 ben Exp $
+# $Id: mkputty.mpw,v 1.1.2.7 1999/04/02 10:21:49 ben Exp $
 
 set program "{1}"
 shift
 if "{program}" == "" || "{program}" == "68k"
-	set program PuTTY
+	set program PuTTY.68k
 end
 if "{program}" == "ppc"
 	set program PuTTY.ppc
 end
 if "{program}" == "fat"
-	set program PuTTY.fat
+	set program PuTTY
 end
 
 Set makefile Makefile.mpw

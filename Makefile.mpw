@@ -1,4 +1,4 @@
-# $Id: Makefile.mpw,v 1.1.2.8 1999/04/01 21:25:06 ben Exp $
+# $Id: Makefile.mpw,v 1.1.2.9 1999/04/02 10:21:48 ben Exp $
 # This is the Makefile for building PuTTY for the Mac OS.
 # Users of non-Mac systems will see some pretty strange characters around.
 
@@ -11,11 +11,6 @@ Sym¥PPC      =
 COptions     = {Includes} {Sym¥68K} -proto strict -opt all
 # disable "unused parameter" warnings
 PPCCOptions  = {Includes} {Sym¥PPC} -w 35
-
-# short names for targets
-68k Ä PuTTY
-ppc Ä PuTTY.ppc
-fat Ä PuTTY.fat
 
 Objects¥68K  = ¶
 		mac.c.o ¶
@@ -67,48 +62,52 @@ all Ä 68k ppc fat
 clean Ä
 	delete -i {Objects¥68K} {Objects¥PPC} ¶
 		PuTTY PuTTY.fat PuTTY.ppc PuTTY.NJ
+# short names for targets
+68k Ä PuTTY.68k
+ppc Ä PuTTY.ppc
+fat Ä PuTTY
 
-PuTTY.ppc ÄÄ {¥MondoBuild¥} {Objects¥PPC}
+
+PuTTY.rsrc Ä mac_res.r macresid.h
+	Rez mac_res.r -o {Targ} {Includes}
+
+PuTTY.ppc Ä {Objects¥PPC} PuTTY.rsrc
+	Delete -i {Targ}
 	PPCLink ¶
 		-o {Targ} {Sym¥PPC} ¶
-		-t 'APPL' ¶
-		-c 'pTTY' ¶
+		-t 'APPL' -c 'pTTY' ¶
+		-fragname PuTTY ¶
 		{Objects¥PPC} ¶
 		{Libs¥PPC}
+	Echo 'Include "PuTTY.rsrc";' > merge.r
+	Rez merge.r -o {Targ} -append
+	Delete -i merge.r
+	Rez version.r -d BUILD_ARCH='"PowerPC"' -o {Targ} {Includes} -append
 
-
-PuTTY ÄÄ {Objects¥68K} {Libs¥68K}
+PuTTY.68k ÄÄ {Objects¥68K} {Libs¥68K}
 	IF (`exists {Targ}.NJ`)
 		ILink ¶
 			-o {Targ} {Sym¥68K} ¶
-			-t 'APPL' ¶
-			-c 'pTTY' ¶
+			-t 'APPL' -c 'pTTY' ¶
 			-newerdeps {NewerDeps}
 	ELSE
 		ILink ¶
 			-o {Targ} {Sym¥68K} ¶
-			-t 'APPL' ¶
-			-c 'pTTY' ¶
+			-t 'APPL' -c 'pTTY' ¶
 			{Objects¥68K} ¶
 			{Libs¥68K}
 	END
 
-PuTTY ÄÄ mac_res.r macresid.h
-	Rez mac_res.r -o {Targ} {Includes} -append
+PuTTY.68k ÄÄ PuTTY.rsrc
+	Echo 'Include "PuTTY.rsrc";' > merge.r
+	Rez merge.r -o {Targ} -append
+	Delete -i merge.r
+	Rez version.r -d BUILD_ARCH='"68k"' -o {Targ} {Includes} -append
 
-PuTTY ÄÄ version.r version.h
-	Rez mac_res.r -d BUILD_ARCH='"68k"' -o {Targ} {Includes} -append
-
-PuTTY.ppc ÄÄ {¥MondoBuild¥} mac_res.r macresid.h
-	Rez mac_res.r -o {Targ} {Includes} -append
-
-PuTTY.ppc ÄÄ version.r version.h
-	Rez mac_res.r -d BUILD_ARCH='"PowerPC"' -o {Targ} {Includes} -append
-
-PuTTY.fat Ä PuTTY PuTTY.ppc version.r version.h
-	Duplicate -y PuTTY PuTTY.fat
-	MergeFragment PuTTY.ppc PuTTY.fat
-	Rez mac_res.r -d BUILD_ARCH='"fat"' -o {Targ} {Includes} -append
+PuTTY Ä PuTTY.68k PuTTY.ppc version.r version.h
+	Duplicate -y PuTTY.68k {Targ}
+	MergeFragment PuTTY.ppc {Targ}
+	Rez version.r -d BUILD_ARCH='"fat"' -o {Targ} {Includes} -append
 
 .c.o Ä .c
 	{C} {default}.c -o {Targ} {COptions}
