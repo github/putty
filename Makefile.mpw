@@ -1,4 +1,4 @@
-# $Id: Makefile.mpw,v 1.1.2.4 1999/03/27 15:39:45 ben Exp $
+# $Id: Makefile.mpw,v 1.1.2.5 1999/03/28 15:23:37 ben Exp $
 # This is the Makefile for building PuTTY for the Mac OS.
 # Users of non-Mac systems will see some pretty strange characters around.
 
@@ -6,44 +6,48 @@ MAKEFILE     = Makefile.mpw
 ¥MondoBuild¥ =  # Make blank to avoid rebuilds when makefile is modified
 Includes     =
 Sym¥68K      =
-ObjDir¥68K   =
 Sym¥PPC      = 
-ObjDir¥PPC   =
 
 COptions     = {Includes} {Sym¥68K} -proto strict -opt all
-PPCCOptions  = {Includes} {Sym¥PPC} -opt size 
+# disable "unused parameter" warnings
+PPCCOptions  = {Includes} {Sym¥PPC} -w 35
+
+# short names for targets
+68k Ä PuTTY
+ppc Ä PuTTY.ppc
+fat Ä PuTTY.fat
 
 Objects¥68K  = ¶
-		"{ObjDir¥68K}mac.c.o" ¶
-		"{ObjDir¥68K}maccfg.c.o" ¶
-		"{ObjDir¥68K}macterm.c.o" ¶
-		"{ObjDir¥68K}misc.c.o" ¶
-#		"{ObjDir¥68K}ssh.c.o" ¶
-#		"{ObjDir¥68K}sshcrc.c.o" ¶
-#		"{ObjDir¥68K}sshdes.c.o" ¶
-#		"{ObjDir¥68K}sshmd5.c.o" ¶
-#		"{ObjDir¥68K}sshrand.c.o" ¶
-#		"{ObjDir¥68K}sshrsa.c.o" ¶
-#		"{ObjDir¥68K}sshsha.c.o" ¶
-#		"{ObjDir¥68K}telnet.c.o" ¶
-		"{ObjDir¥68K}terminal.c.o" ¶
-		"{ObjDir¥68K}testback.c.o"
+		mac.c.o ¶
+		maccfg.c.o ¶
+		macterm.c.o ¶
+		misc.c.o ¶
+#		ssh.c.o ¶
+#		sshcrc.c.o ¶
+#		sshdes.c.o ¶
+#		sshmd5.c.o ¶
+#		sshrand.c.o ¶
+#		sshrsa.c.o ¶
+#		sshsha.c.o ¶
+#		telnet.c.o ¶
+		terminal.c.o ¶
+		testback.c.o
 
 Objects¥PPC  = ¶
-		"{ObjDir¥PPC}mac.c.x" ¶
-		"{ObjDir¥PPC}maccfg.c.x" ¶
-		"{ObjDir¥PPC}macterm.c.x" ¶
-		"{ObjDir¥PPC}misc.c.x" ¶
-#		"{ObjDir¥PPC}ssh.c.x" ¶
-#		"{ObjDir¥PPC}sshcrc.c.x" ¶
-#		"{ObjDir¥PPC}sshdes.c.x" ¶
-#		"{ObjDir¥PPC}sshmd5.c.x" ¶
-#		"{ObjDir¥PPC}sshrand.c.x" ¶
-#		"{ObjDir¥PPC}sshrsa.c.x" ¶
-#		"{ObjDir¥PPC}sshsha.c.x" ¶
-#		"{ObjDir¥PPC}telnet.c.x" ¶
-		"{ObjDir¥PPC}terminal.c.x" ¶
-		"{ObjDir¥PPC}testback.c.x"
+		mac.c.x ¶
+		maccfg.c.x ¶
+		macterm.c.x ¶
+		misc.c.x ¶
+#		ssh.c.x ¶
+#		sshcrc.c.x ¶
+#		sshdes.c.x ¶
+#		sshmd5.c.x ¶
+#		sshrand.c.x ¶
+#		sshrsa.c.x ¶
+#		sshsha.c.x ¶
+#		telnet.c.x ¶
+		terminal.c.x ¶
+		testback.c.x
 
 
 Libs¥68K  =	"{CLibraries}StdCLib.o" ¶
@@ -54,31 +58,28 @@ Libs¥68K  =	"{CLibraries}StdCLib.o" ¶
 Libs¥PPC  =	"{SharedLibraries}InterfaceLib" ¶
 		"{SharedLibraries}StdCLib" ¶
 		"{SharedLibraries}MathLib" ¶
+		"{SharedLibraries}AppearanceLib" ¶
 		"{PPCLibraries}StdCRuntime.o" ¶
-		"{PPCLibraries}PPCCRuntime.o" ¶
-		"{PPCLibraries}PPCToolLibs.o"
+		"{PPCLibraries}PPCCRuntime.o"
 
 PuTTY.ppc ÄÄ {¥MondoBuild¥} {Objects¥PPC}
 	PPCLink ¶
 		-o {Targ} {Sym¥PPC} ¶
-		{Objects¥PPC} ¶
 		-t 'APPL' ¶
 		-c 'pTTY' ¶
+		{Objects¥PPC} ¶
 		{Libs¥PPC}
 
 
 PuTTY ÄÄ {Objects¥68K} {Libs¥68K}
 	IF (`exists {Targ}.NJ`)
 		ILink ¶
-			-compact ¶
 			-o {Targ} {Sym¥68K} ¶
 			-t 'APPL' ¶
 			-c 'pTTY' ¶
 			-newerdeps {NewerDeps}
 	ELSE
 		ILink ¶
-			-compact ¶
-			-o {Targ} {Sym¥68K} ¶
 			-t 'APPL' ¶
 			-c 'pTTY' ¶
 			{Objects¥68K} ¶
@@ -88,75 +89,33 @@ PuTTY ÄÄ {Objects¥68K} {Libs¥68K}
 PuTTY ÄÄ {¥MondoBuild¥} mac_res.r macresid.h
 	Rez mac_res.r -o {Targ} {Includes} -append
 
+PuTTY.ppc ÄÄ {¥MondoBuild¥} mac_res.r macresid.h
+	Rez mac_res.r -o {Targ} {Includes} -append
 
-"{ObjDir¥68K}mac.c.o" Ä {¥MondoBuild¥} mac.c putty.h mac.h macresid.h
-	{C} mac.c -o {Targ} {COptions}
-"{ObjDir¥PPC}mac.c.x" Ä {¥MondoBuild¥} mac.c putty.h mac.h macresid.h
-	{PPCC} mac.c -o {Targ} {PPCCOptions}
+PuTTY.fat Ä PuTTY PuTTY.ppc
+	Duplicate -y PuTTY PuTTY.fat
+	MergeFragment PuTTY.ppc PuTTY.fat
 
+.c.o Ä .c
+	{C} {default}.c -o {Targ} {COptions}
 
-"{ObjDir¥68K}maccfg.c.o" Ä {¥MondoBuild¥} maccfg.c putty.h mac.h macresid.h
-	{C} maccfg.c -o {Targ} {COptions}
-"{ObjDir¥PPC}maccfg.c.x" Ä {¥MondoBuild¥} maccfg.c putty.h mac.h macresid.h
-	{PPCC} maccfg.c -o {Targ} {PPCCoptions}
+# The odd stuff here seems to stop afpd getting confused.
+.c.x Ä .c
+	echo -n > {Targ}
+	setfile -t XCOF {Targ}
+	{PPCC} {default}.c -o {Targ} {PPCCOptions}
 
-"{ObjDir¥68K}macterm.c.o" Ä {¥MondoBuild¥} macterm.c mac.h putty.h
-	{C} macterm.c -o {Targ} {COptions}
-"{ObjDir¥PPC}macterm.c.x" Ä {¥MondoBuild¥} macterm.c mac.h putty.h
-	{PPCC} macterm.c -o {Targ} {PPCCoptions}
-
-"{ObjDir¥68K}misc.c.o" Ä {¥MondoBuild¥} misc.c putty.h
-	{C} misc.c -o {Targ} {COptions}
-"{ObjDir¥PPC}misc.c.x" Ä {¥MondoBuild¥} misc.c putty.h
-	{PPCC} misc.c -o {Targ} {PPCCoptions}
-
-"{ObjDir¥68K}ssh.c.o" Ä {¥MondoBuild¥} ssh.c
-	{C} ssh.c -o {Targ} {COptions}
-"{ObjDir¥PPC}ssh.c.x" Ä {¥MondoBuild¥} ssh.c
-	{PPCC} ssh.c -o {Targ} {PPCCoptions}
-
-"{ObjDir¥68K}sshcrc.c.o" Ä {¥MondoBuild¥} sshcrc.c
-	{C} sshcrc.c -o {Targ} {COptions}
-"{ObjDir¥PPC}sshcrc.c.x" Ä {¥MondoBuild¥} sshcrc.c
-	{PPCC} sshcrc.c -o {Targ} {PPCCoptions}
-
-"{ObjDir¥68K}sshdes.c.o" Ä {¥MondoBuild¥} sshdes.c
-	{C} sshdes.c -o {Targ} {COptions}
-"{ObjDir¥PPC}sshdes.c.x" Ä {¥MondoBuild¥} sshdes.c
-	{PPCC} sshdes.c -o {Targ} {PPCCoptions}
-
-"{ObjDir¥68K}sshmd5.c.o" Ä {¥MondoBuild¥} sshmd5.c
-	{C} sshmd5.c -o {Targ} {COptions}
-"{ObjDir¥PPC}sshmd5.c.x" Ä {¥MondoBuild¥} sshmd5.c
-	{PPCC} sshmd5.c -o {Targ} {PPCCoptions}
-
-"{ObjDir¥68K}sshrand.c.o" Ä {¥MondoBuild¥} sshrand.c
-	{C} sshrand.c -o {Targ} {COptions}
-"{ObjDir¥PPC}sshrand.c.x" Ä {¥MondoBuild¥} sshrand.c
-	{PPCC} sshrand.c -o {Targ} {PPCCoptions}
-
-"{ObjDir¥68K}sshrsa.c.o" Ä {¥MondoBuild¥} sshrsa.c
-	{C} sshrsa.c -o {Targ} {COptions}
-"{ObjDir¥PPC}sshrsa.c.x" Ä {¥MondoBuild¥} sshrsa.c
-	{PPCC} sshrsa.c -o {Targ} {PPCCoptions}
-
-"{ObjDir¥68K}sshsha.c.o" Ä {¥MondoBuild¥} sshsha.c
-	{C} sshsha.c -o {Targ} {COptions}
-"{ObjDir¥PPC}sshsha.c.x" Ä {¥MondoBuild¥} sshsha.c
-	{PPCC} sshsha.c -o {Targ} {PPCCoptions}
-
-"{ObjDir¥68K}telnet.c.o" Ä {¥MondoBuild¥} telnet.c
-	{C} telnet.c -o {Targ} {COptions}
-"{ObjDir¥PPC}telnet.c.x" Ä {¥MondoBuild¥} telnet.c
-	{PPCC} telnet.c -o {Targ} {PPCCoptions}
-
-"{ObjDir¥68K}terminal.c.o" Ä {¥MondoBuild¥} terminal.c putty.h
-	{C} terminal.c -o {Targ} {COptions}
-"{ObjDir¥PPC}terminal.c.x" Ä {¥MondoBuild¥} terminal.c putty.h
-	{PPCC} terminal.c -o {Targ} {PPCCoptions}
-
-"{ObjDir¥68K}testback.c.o" Ä {¥MondoBuild¥} testback.c putty.h
-	{C} testback.c -o {Targ} {COptions}
-"{ObjDir¥PPC}testback.c.x" Ä {¥MondoBuild¥} testback.c putty.h
-	{PPCC} testback.c -o {Targ} {PPCCoptions}
-
+mac.c.o 	mac.c.x		Ä putty.h mac.h macresid.h
+maccfg.c.o	maccfg.c.x	Ä putty.h mac.h macresid.h
+macterm.c.o	macterm.c.x	Ä putty.h mac.h
+misc.c.o	misc.c.x	Ä putty.h
+ssh.c.o		ssh.c.x		Ä putty.h ssh.h
+sshcrc.c.o	sshcrc.c.x	Ä
+sshdes.c.o	sshdes.c.x	Ä ssh.h 
+sshmd5.c.o	sshmd5.c.x	Ä ssh.h
+sshrand.c.o	sshrand.c.x	Ä ssh.h
+sshrsa.c.o	sshrsa.c.x	Ä ssh.h
+sshsha.c.o	sshsha.c.x	Ä ssh.h
+telnet.c.o	telnet.c.x	Ä putty.h
+terminal.c.o	terminal.c.x	Ä putty.h
+testback.c.o	testback.c.x	Ä putty.h
