@@ -1,4 +1,4 @@
-/* $Id: macterm.c,v 1.1.2.22 1999/03/14 17:43:35 ben Exp $ */
+/* $Id: macterm.c,v 1.1.2.23 1999/03/14 20:43:51 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -121,6 +121,8 @@ static void display_resource(unsigned long type, short id) {
 void mac_newsession(void) {
     struct mac_session *s;
     int i;
+    UInt32 starttime;
+    char msg[128];
 
     /* This should obviously be initialised by other means */
     mac_loadconfig(&cfg);
@@ -144,7 +146,11 @@ void mac_newsession(void) {
     SetPalette(s->window, s->palette, TRUE); 
     ActivatePalette(s->window);
     ShowWindow(s->window);
+    starttime = TickCount();
     display_resource('pTST', 128);
+    sprintf(msg, "Elapsed ticks: %d\015\012", TickCount() - starttime);
+    inbuf_putstr(msg);
+    term_out();
 }
 
 static void mac_initfont(struct mac_session *s) {
