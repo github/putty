@@ -1,4 +1,4 @@
-# $Id: Makefile.mpw,v 1.1.2.14 1999/08/02 22:32:38 ben Exp $
+# $Id: Makefile.mpw,v 1.1.2.15 1999/09/01 22:12:12 ben Exp $
 # This is the Makefile for building PuTTY for the Mac OS.
 # Users of non-Mac systems will see some pretty strange characters around.
 
@@ -27,7 +27,7 @@ Objects¥68K  = ¶
 #		sshrand.c.o ¶
 #		sshrsa.c.o ¶
 #		sshsha.c.o ¶
-		telnet.c.o ¶
+#		telnet.c.o ¶
 		terminal.c.o ¶
 		testback.c.o
 
@@ -46,7 +46,7 @@ Objects¥PPC  = ¶
 #		sshrand.c.x ¶
 #		sshrsa.c.x ¶
 #		sshsha.c.x ¶
-		telnet.c.x ¶
+#		telnet.c.x ¶
 		terminal.c.x ¶
 		testback.c.x
 
