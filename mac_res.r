@@ -1,4 +1,4 @@
-/* $Id: mac_res.r,v 1.1.2.17 1999/04/02 12:58:02 ben Exp $ */
+/* $Id: mac_res.r,v 1.1.2.18 1999/09/01 22:16:15 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
@@ -556,7 +556,7 @@ resource 'pSET' (PREF_settings, "settings", purgeable) {
     no_implicit_copy,
 #define PREF_strings 1024
     PREF_strings, 1,		/* host 'STR#' */
-    23, prot_telnet,		/* port, protocol */
+    7, prot_telnet,		/* port, protocol */
     PREF_strings, 2,		/* termtype 'STR#' */
     PREF_strings, 3,		/* termspeed 'STR#' */
     PREF_strings, 4,		/* environmt 'STR#' */
@@ -573,7 +573,7 @@ resource 'pSET' (PREF_settings, "settings", purgeable) {
 
 resource 'STR#' (PREF_strings, "strings", purgeable) {
     {
-	"nowhere.loopback.edu",
+	"172.17.11.11",
 	"xterm",
 	"38400,38400",
 	"\000",

@@ -1,4 +1,4 @@
-/* $Id: testback.c,v 1.1.2.7 1999/08/02 08:04:31 ben Exp $ */
+/* $Id: testback.c,v 1.1.2.8 1999/09/01 22:16:15 ben Exp $ */
 /*
  * Copyright (c) 1999 Simon Tatham
  * Copyright (c) 1999 Ben Harris
@@ -40,6 +40,8 @@ static void loop_send(Session *, char *, int);
 static void hexdump_send(Session *, char *, int);
 static void null_size(Session *);
 static void null_special(Session *, Telnet_Special);
+static char *rawtcp_init(Session *);
+static int rawtcp_msg(Session *, SOCKET, Net_Event_Type);
 
 Backend null_backend = {
     null_init, null_msg, null_send, null_size, null_special
@@ -51,6 +53,10 @@ Backend loop_backend = {
 
 Backend hexdump_backend = {
     null_init, null_msg, hexdump_send, null_size, null_special
+};
+
+Backend rawtcp_backend = {
+    rawtcp_init, rawtcp_msg, null_send, null_size, null_special
 };
 
 static char *null_init(Session *s) {
@@ -98,6 +104,56 @@ static void null_size(Session *s) {
 static void null_special(Session *s, Telnet_Special code) {
 
 }
+
+struct rawtcp_private {
+    SOCKET s;
+};
+
+static char *rawtcp_init(Session *sess) {
+    struct rawtcp_private *rp;
+
+    sess->back_priv = smalloc(sizeof(struct rawtcp_private));
+    rp = (struct rawtcp_private *)sess->back_priv;
+    rp->s = net_open(sess, sess->cfg.host, sess->cfg.port);
+    if (rp->s == INVALID_SOCKET)
+	fatalbox("Open failed");
+}
+
+static int rawtcp_msg(Session *sess, SOCKET sock, Net_Event_Type ne) {
+    struct rawtcp_private *rp = (struct rawtcp_private *)sess->back_priv;
+
+    switch (ne) {
+      case NE_NULL:
+	break;
+      case NE_OPEN:
+	break;
+      case NE_NOHOST:
+      case NE_REFUSED:
+      case NE_NOOPEN:
+	rp->s = INVALID_SOCKET;
+	fatalbox("Open failed");
+	break;
+      case NE_DATA:
+	break;
+      case NE_URGENT:
+	break;
+      case NE_CLOSING:
+	/* net_close(rp->s);*/
+	break;
+      case NE_CLOSED:
+	rp->s = INVALID_SOCKET;
+	fatalbox("Connection closed");
+	break;
+      case NE_TIMEOUT:
+      case NE_ABORT:
+      case NE_DIED:
+	fatalbox("Connection died");
+	rp->s = INVALID_SOCKET;
+	break;
+    }
+}
+
+
 
 /*
  * Emacs magic:

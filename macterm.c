@@ -1,4 +1,4 @@
-/* $Id: macterm.c,v 1.1.2.35 1999/07/24 15:51:12 ben Exp $ */
+/* $Id: macterm.c,v 1.1.2.36 1999/09/01 22:16:15 ben Exp $ */
 /*
  * Copyright (c) 1999 Simon Tatham
  * Copyright (c) 1999 Ben Harris
@@ -135,7 +135,7 @@ void mac_newsession(void) {
     s = smalloc(sizeof(*s));
     memset(s, 0, sizeof(*s));
     mac_loadconfig(&s->cfg);
-    s->back = &null_backend;
+    s->back = &rawtcp_backend;
 	
     /* XXX: Own storage management? */
     if (HAVE_COLOR_QD())
@@ -156,11 +156,13 @@ void mac_newsession(void) {
     }
     ShowWindow(s->window);
     s->back->init(s);
+#if 0
     starttime = TickCount();
     display_resource(s, 'pTST', 128);
     sprintf(msg, "Elapsed ticks: %d\015\012", TickCount() - starttime);
     inbuf_putstr(s, msg);
     term_out(s);
+#endif
 }
 
 static void mac_initfont(Session *s) {
