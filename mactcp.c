@@ -1,4 +1,4 @@
-/* $Id: macnet.c,v 1.1.2.5 1999/04/07 22:43:35 ben Exp $ */
+/* $Id: mactcp.c,v 1.1.2.1 1999/08/02 08:06:32 ben Exp $ */
 /*
  * Copyright (c) 1999 Ben Harris
  * All rights reserved.
