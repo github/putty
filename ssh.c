@@ -207,7 +207,7 @@ static void ssh_gotdata(Session *sess, unsigned char *data, int datalen) {
 	sp->pktin.type = sp->pktin.data[sp->pad];
 	sp->pktin.body = sp->pktin.data+sp->pad+1;
 
-	if (sp->pktin.type == 36) {	       /* SSH_MSG_DEBUG */
+	if (sp->pktin.type == SSH_MSG_DEBUG) {	       /* SSH_MSG_DEBUG */
 	    /* FIXME: log it */
 	} else
 	    ssh_protocol(sess, NULL, 0, 1);
@@ -290,7 +290,7 @@ static void ssh_protocol(Session *sess, unsigned char *in, int inlen,
     while (!ispkt)
 	crReturnV(sp->pr_line);
 
-    if (sp->pktin.type != 2)
+    if (sp->pktin.type != SSH_SMSG_PUBLIC_KEY)
 	fatalbox("Public key packet not received");
 
     memcpy(cookie, sp->pktin.body, 8);
@@ -344,7 +344,7 @@ static void ssh_protocol(Session *sess, unsigned char *in, int inlen,
 	cipher_type = SSH_CIPHER_3DES;
     }
 
-    s_wrpkt_start(3, len+15);
+    s_wrpkt_start(SSH_CMSG_SESSION_KEY, len+15);
     sp->pktout.body[0] = cipher_type;
     memcpy(sp->pktout.body+1, cookie, 8);
     sp->pktout.body[9] = (len*8) >> 8;
@@ -362,7 +362,7 @@ static void ssh_protocol(Session *sess, unsigned char *in, int inlen,
 
     do { crReturnV(sp->pr_line); } while (!ispkt);
 
-    if (sp->pktin.type != 14)
+    if (sp->pktin.type != SSH_SMSG_SUCCESS)
 	fatalbox("Encryption not successfully enabled");
 
     fflush(stdout);
@@ -412,7 +412,7 @@ static void ssh_protocol(Session *sess, unsigned char *in, int inlen,
 	    sprintf(stuff, "Sent username \"%s\".\r\n", username);
 	    c_write(stuff, strlen(stuff));
 	}
-	s_wrpkt_start(4, 4+strlen(username));
+	s_wrpkt_start(SSH_CMSG_USER, 4+strlen(username));
 	sp->pktout.body[0] = sp->pktout.body[1] = sp->pktout.body[2] = 0;
 	sp->pktout.body[3] = strlen(username);
 	memcpy(sp->pktout.body+4, username, strlen(username));
@@ -421,7 +421,7 @@ static void ssh_protocol(Session *sess, unsigned char *in, int inlen,
 
     do { crReturnV(sp->pr_line); } while (!ispkt);
 
-    while (sp->pktin.type == 15) {
+    while (sp->pktin.type == SSH_SMSG_FAILURE) {
 	static char password[100];
 	static int pos;
 	static char c;
@@ -452,23 +452,23 @@ static void ssh_protocol(Session *sess, unsigned char *in, int inlen,
 	    }
 	}
 	c_write("\r\n", 2);
-	s_wrpkt_start(9, 4+strlen(password));
+	s_wrpkt_start(SSH_CMSG_AUTH_PASSWORD, 4+strlen(password));
 	sp->pktout.body[0] = sp->pktout.body[1] = sp->pktout.body[2] = 0;
 	sp->pktout.body[3] = strlen(password);
 	memcpy(sp->pktout.body+4, password, strlen(password));
 	s_wrpkt();
 	memset(password, 0, strlen(password));
 	do { crReturnV(sp->pr_line); } while (!ispkt);
-	if (sp->pktin.type == 15) {
+	if (sp->pktin.type == SSH_SMSG_FAILURE) {
 	    c_write("Access denied\r\n", 15);
-	} else if (sp->pktin.type != 14) {
+	} else if (sp->pktin.type != SSH_SMSG_SUCCESS) {
 	    fatalbox("Strange packet received, type %d", sp->pktin.type);
 	}
     }
 
     if (!cfg.nopty) {
         i = strlen(cfg.termtype);
-        s_wrpkt_start(10, i+5*4+1);
+        s_wrpkt_start(SSH_CMSG_REQUEST_PTY, i+5*4+1);
         sp->pktout.body[0] = (i >> 24) & 0xFF;
         sp->pktout.body[1] = (i >> 16) & 0xFF;
         sp->pktout.body[2] = (i >> 8) & 0xFF;
@@ -487,14 +487,15 @@ static void ssh_protocol(Session *sess, unsigned char *in, int inlen,
         s_wrpkt();
         ssh_state = SSH_STATE_INTERMED;
         do { crReturnV(sp->pr_line); } while (!ispkt);
-        if (sp->pktin.type != 14 && sp->pktin.type != 15) {
+        if (sp->pktin.type != SSH_SMSG_SUCCESS
+	    && sp->pktin.type != SSH_SMSG_FAILURE) {
             fatalbox("Protocol confusion");
-        } else if (sp->pktin.type == 15) {
+        } else if (sp->pktin.type == SSH_SMSG_FAILURE) {
             c_write("Server refused to allocate pty\r\n", 32);
         }
     }
 
-    s_wrpkt_start(12, 0);
+    s_wrpkt_start(SSH_CMSG_EXEC_SHELL, 0);
     s_wrpkt();
 
     ssh_state = SSH_STATE_SESSION;
@@ -504,28 +505,29 @@ static void ssh_protocol(Session *sess, unsigned char *in, int inlen,
     while (1) {
 	crReturnV(sp->pr_line);
 	if (ispkt) {
-	    if (sp->pktin.type == 17 || sp->pktin.type == 18) {
+	    if (sp->pktin.type == SSH_SMSG_STDOUT_DATA ||
+		sp->pktin.type == SSH_SMSG_STDERR_DATA) {
 		long len = 0;
 		for (i = 0; i < 4; i++)
 		    len = (len << 8) + sp->pktin.body[i];
 		c_write(sp->pktin.body+4, len);
-	    } else if (sp->pktin.type == 1) {
+	    } else if (sp->pktin.type == SSH_MSG_DISCONNECT) {
 		/* SSH_MSG_DISCONNECT */
                 ssh_state = SSH_STATE_CLOSED;
-	    } else if (sp->pktin.type == 14) {
+	    } else if (sp->pktin.type == SSH_SMSG_SUCCESS) {
 		/* SSH_MSG_SUCCESS: may be from EXEC_SHELL on some servers */
-	    } else if (sp->pktin.type == 15) {
+	    } else if (sp->pktin.type == SSH_SMSG_FAILURE) {
 		/* SSH_MSG_FAILURE: may be from EXEC_SHELL on some servers
 		 * if no pty is available or in other odd cases. Ignore */
-	    } else if (sp->pktin.type == 20) {
+	    } else if (sp->pktin.type == SSH_SMSG_EXITSTATUS) {
 		/* EXITSTATUS */
-		s_wrpkt_start(33, 0);
+		s_wrpkt_start(SSH_CMSG_EXIT_CONFIRMATION, 0);
 		s_wrpkt();
 	    } else {
 		fatalbox("Strange packet received: type %d", sp->pktin.type);
 	    }
 	} else {
-	    s_wrpkt_start(16, 4+inlen);
+	    s_wrpkt_start(SSH_CMSG_STDIN_DATA, 4+inlen);
 	    sp->pktout.body[0] = (inlen >> 24) & 0xFF;
 	    sp->pktout.body[1] = (inlen >> 16) & 0xFF;
 	    sp->pktout.body[2] = (inlen >> 8) & 0xFF;
@@ -671,7 +673,7 @@ static void ssh_size(Session *sess) {
 	break;
       case SSH_STATE_SESSION:
         if (!sess->cfg.nopty) {
-            s_wrpkt_start(11, 16);
+            s_wrpkt_start(SSH_CMSG_WINDOW_SIZE, 16);
             sp->pktout.body[0] = (rows >> 24) & 0xFF;
             sp->pktout.body[1] = (rows >> 16) & 0xFF;
             sp->pktout.body[2] = (rows >> 8) & 0xFF;
