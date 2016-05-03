@@ -365,6 +365,63 @@ static struct ec_curve *ec_curve25519(void)
     return &curve;
 }
 
+static struct ec_curve *ec_curve448(void)
+{
+    static struct ec_curve curve = { 0 };
+    static unsigned char initialised = 0;
+
+    if (!initialised)
+    {
+        static const unsigned char p[56] = {
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        };
+        static const unsigned char a[56] = {
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x62, 0xa6,
+        };
+        static const unsigned char b[56] = {
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+        };
+        static const unsigned char gx[56] = {
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05,
+        };
+
+        initialise_mcurve(&curve, 448, p, a, b, gx);
+        /* This curve doesn't need a name, because it's never used in
+         * any format that embeds the curve name */
+        curve.name = NULL;
+        curve.textname = "Curve448";
+
+        /* Now initialised, no need to do it again */
+        initialised = 1;
+    }
+
+    return &curve;
+}
+
 static struct ec_curve *ec_ed25519(void)
 {
     static struct ec_curve curve = { 0 };
@@ -2684,6 +2741,7 @@ const struct ssh_signkey ssh_ecdsa_nistp521 = {
 
 struct eckex_extra {
     struct ec_curve *(*curve)(void);
+    int low_byte_mask, high_byte_top_bit;
 };
 
 static Bignum ecdh_calculate(const Bignum private,
@@ -2750,18 +2808,21 @@ void *ssh_ecdhkex_newkey(const struct ssh_kex *kex)
     key->publicKey.curve = curve;
 
     if (curve->type == EC_MONTGOMERY) {
-        unsigned char bytes[32] = {0};
+        int nbytes = (curve->fieldBits+7) / 8;
+        unsigned char bytes[56] = {0};
         int i;
 
-        for (i = 0; i < sizeof(bytes); ++i)
+        assert(nbytes <= lenof(bytes));
+
+        for (i = 0; i < nbytes; ++i)
         {
             bytes[i] = (unsigned char)random_byte();
         }
-        bytes[0] &= 248;
-        bytes[31] &= 127;
-        bytes[31] |= 64;
-        key->privateKey = bignum_from_bytes_le(bytes, sizeof(bytes));
-        smemclr(bytes, sizeof(bytes));
+        bytes[0] &= extra->low_byte_mask;
+        bytes[nbytes-1] &= extra->high_byte_top_bit - 1;
+        bytes[nbytes-1] |= extra->high_byte_top_bit;
+        key->privateKey = bignum_from_bytes_le(bytes, nbytes);
+        smemclr(bytes, nbytes);
         if (!key->privateKey) {
             sfree(key);
             return NULL;
@@ -2866,10 +2927,20 @@ void ssh_ecdhkex_freekey(void *key)
     ecdsa_freekey(key);
 }
 
-static const struct eckex_extra kex_extra_curve25519 = { ec_curve25519 };
+static const struct eckex_extra kex_extra_curve25519 = {
+    ec_curve25519, 0xF8, 0x40,
+};
 static const struct ssh_kex ssh_ec_kex_curve25519 = {
     "curve25519-sha256@libssh.org", NULL, KEXTYPE_ECDH,
     &ssh_sha256, &kex_extra_curve25519,
+};
+
+static const struct eckex_extra kex_extra_curve448 = {
+    ec_curve448, 0xFC, 0x80,
+};
+static const struct ssh_kex ssh_ec_kex_curve448 = {
+    "curve448-sha512", NULL, KEXTYPE_ECDH,
+    &ssh_sha512, &kex_extra_curve448,
 };
 
 const struct eckex_extra kex_extra_nistp256 = { ec_p256 };
@@ -2891,6 +2962,7 @@ static const struct ssh_kex ssh_ec_kex_nistp521 = {
 };
 
 static const struct ssh_kex *const ec_kex_list[] = {
+    &ssh_ec_kex_curve448,
     &ssh_ec_kex_curve25519,
     &ssh_ec_kex_nistp256,
     &ssh_ec_kex_nistp384,
