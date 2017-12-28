@@ -16,7 +16,6 @@
 !makefile vc windows/Makefile.vc
 !makefile vcproj windows/MSVC
 !makefile cygwin windows/Makefile.mgw
-!makefile borland windows/Makefile.bor
 !makefile lcc windows/Makefile.lcc
 !makefile gtk unix/Makefile.gtk
 !makefile unix unix/Makefile.ux
@@ -209,9 +208,9 @@ endif
 if HAVE_QUARTZ
 noinst_SCRIPTS = unix/PuTTY.app unix/Pterm.app
 unix/PuTTY.app: unix/putty.bundle puttyapp osxlaunch
-	rm -rf $@ && gtk-mac-bundler $<
+	rm -rf $@ && PUTTY_GTK_PREFIX_FROM_MAKEFILE=$$(pkg-config --variable=prefix gtk+-3.0) gtk-mac-bundler $<
 unix/Pterm.app: unix/pterm.bundle ptermapp osxlaunch
-	rm -rf $@ && gtk-mac-bundler $<
+	rm -rf $@ && PUTTY_GTK_PREFIX_FROM_MAKEFILE=$$(pkg-config --variable=prefix gtk+-3.0) gtk-mac-bundler $<
 endif
 !end
 
@@ -236,12 +235,13 @@ TERMINAL = terminal wcwidth ldiscucs logging tree234 minibidi
 
 # GUI front end and terminal emulator (putty, puttytel).
 GUITERM  = TERMINAL window windlg winctrls sizetip winprint winutils
-	 + wincfg sercfg winhelp winjump
+	 + wincfg sercfg winhelp winjump sessprep
 
 # Same thing on Unix.
 UXTERM   = TERMINAL uxcfg sercfg uxucs uxprint timing callback miscucs
 GTKTERM  = UXTERM gtkwin gtkcfg gtkdlg gtkfont gtkcols gtkmisc xkeysym
-	 + x11misc gtkcomm
+	 + x11misc gtkcomm sessprep
+GTKMAIN  = gtkmain cmdline
 
 # Non-SSH back ends (putty, puttytel, plink).
 NONSSH   = telnet raw rlogin ldisc pinger
@@ -256,14 +256,14 @@ WINSSH   = SSH winnoise wincapi winpgntc wingss winshare winnps winnpc
 UXSSH    = SSH uxnoise uxagentc uxgss uxshare
 
 # SFTP implementation (pscp, psftp).
-SFTP     = sftp int64 logging
+SFTP     = sftp int64 logging cmdline
 
 # Miscellaneous objects appearing in all the network utilities (not
 # Pageant or PuTTYgen).
 MISC     = timing callback misc version settings tree234 proxy conf be_misc
 WINMISC  = MISC winstore winnet winhandl cmdline windefs winmisc winproxy
          + wintime winhsock errsock winsecur winucs miscucs
-UXMISC   = MISC uxstore uxsel uxnet uxpeer cmdline uxmisc uxproxy time
+UXMISC   = MISC uxstore uxsel uxnet uxpeer uxmisc uxproxy time
 
 # import.c and dependencies, for PuTTYgen-like utilities that have to
 # load foreign key files.
@@ -273,8 +273,8 @@ IMPORT   = import sshbcrypt sshblowf
 CHARSET  = sbcsdat slookup sbcs utf8 toucs fromucs xenc mimeenc macenc localenc
 
 # Standard libraries.
-LIBS     = advapi32.lib user32.lib gdi32.lib comctl32.lib comdlg32.lib
-         + shell32.lib winmm.lib imm32.lib winspool.lib ole32.lib
+LIBS     = advapi32.lib user32.lib gdi32.lib comdlg32.lib
+         + shell32.lib imm32.lib ole32.lib
 
 # Network backend sets. This also brings in the relevant attachment
 # to proxy.c depending on whether we're crypto-avoidant or not.
@@ -298,7 +298,7 @@ U_BE_NOSSH = be_nos_s uxser nocproxy
 putty    : [G] GUITERM NONSSH WINSSH W_BE_ALL WINMISC winx11 putty.res LIBS
 puttytel : [G] GUITERM NONSSH W_BE_NOSSH WINMISC puttytel.res nogss LIBS
 plink    : [C] winplink wincons NONSSH WINSSH W_BE_ALL logging WINMISC
-         + winx11 plink.res winnojmp noterm LIBS
+         + winx11 plink.res winnojmp sessprep noterm LIBS
 pscp     : [C] pscp winsftp wincons WINSSH BE_SSH SFTP wildcard WINMISC
          + pscp.res winnojmp LIBS
 psftp    : [C] psftp winsftp wincons WINSSH BE_SSH SFTP wildcard WINMISC
@@ -316,16 +316,16 @@ puttygen : [G] winpgen sshrsag sshdssg sshprime sshdes sshbn sshmd5 version
 
 pterm    : [X] GTKTERM uxmisc misc ldisc settings uxpty uxsel BE_NONE uxstore
          + uxsignal CHARSET cmdline uxpterm version time xpmpterm xpmptcfg
-	 + nogss gtkmain
+	 + nogss GTKMAIN
 putty    : [X] GTKTERM uxmisc misc ldisc settings uxsel U_BE_ALL uxstore
          + uxsignal CHARSET uxputty NONSSH UXSSH UXMISC ux_x11 xpmputty
-         + xpmpucfg gtkmain
+         + xpmpucfg GTKMAIN
 puttytel : [X] GTKTERM uxmisc misc ldisc settings uxsel U_BE_NOSSH
 	 + uxstore uxsignal CHARSET uxputty NONSSH UXMISC xpmputty xpmpucfg
-	 + nogss gtkmain
+	 + nogss GTKMAIN
 
 plink    : [U] uxplink uxcons NONSSH UXSSH U_BE_ALL logging UXMISC uxsignal
-         + ux_x11 noterm uxnogtk
+         + ux_x11 noterm uxnogtk sessprep cmdline
 
 PUTTYGEN_UNIX = sshrsag sshdssg sshprime sshdes sshbn sshmd5 version
          + sshrand uxnoise sshsha misc sshrsa sshdss uxcons uxstore uxmisc
@@ -343,11 +343,11 @@ pageant  : [X] uxpgnt uxagentc aqsync pageant sshrsa sshpubk sshdes sshbn
 	 + gtkask gtkmisc UXMISC
 
 ptermapp : [XT] GTKTERM uxmisc misc ldisc settings uxpty uxsel BE_NONE uxstore
-         + uxsignal CHARSET cmdline uxpterm version time xpmpterm xpmptcfg
-         + nogss gtkapp
+         + uxsignal CHARSET uxpterm version time xpmpterm xpmptcfg
+         + nogss gtkapp nocmdline
 puttyapp : [XT] GTKTERM uxmisc misc ldisc settings uxsel U_BE_ALL uxstore
          + uxsignal CHARSET uxputty NONSSH UXSSH UXMISC ux_x11 xpmputty
-         + xpmpucfg gtkapp
+         + xpmpucfg gtkapp nocmdline
 osxlaunch : [UT] osxlaunch
 
 fuzzterm : [UT] UXTERM CHARSET misc version uxmisc uxucs fuzzterm time settings

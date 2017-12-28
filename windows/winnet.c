@@ -201,8 +201,8 @@ DECL_WINDOWS_FUNCTION(static, int, getaddrinfo,
 DECL_WINDOWS_FUNCTION(static, void, freeaddrinfo, (struct addrinfo *res));
 DECL_WINDOWS_FUNCTION(static, int, getnameinfo,
 		      (const struct sockaddr FAR * sa, socklen_t salen,
-		       char FAR * host, size_t hostlen, char FAR * serv,
-		       size_t servlen, int flags));
+		       char FAR * host, DWORD hostlen, char FAR * serv,
+		       DWORD servlen, int flags));
 DECL_WINDOWS_FUNCTION(static, char *, gai_strerror, (int ecode));
 DECL_WINDOWS_FUNCTION(static, int, WSAAddressToStringA,
 		      (LPSOCKADDR, DWORD, LPWSAPROTOCOL_INFO,
@@ -257,7 +257,7 @@ void sk_init(void)
 	winsock_module = load_system32_dll("wsock32.dll");
     }
     if (!winsock_module)
-	fatalbox("Unable to load any WinSock library");
+	modalfatalbox("Unable to load any WinSock library");
 
 #ifndef NO_IPV6
     /* Check if we have getaddrinfo in Winsock */
@@ -305,18 +305,28 @@ void sk_init(void)
     GET_WINDOWS_FUNCTION(winsock_module, WSAStartup);
     GET_WINDOWS_FUNCTION(winsock_module, WSACleanup);
     GET_WINDOWS_FUNCTION(winsock_module, closesocket);
+#ifndef COVERITY
     GET_WINDOWS_FUNCTION(winsock_module, ntohl);
     GET_WINDOWS_FUNCTION(winsock_module, htonl);
     GET_WINDOWS_FUNCTION(winsock_module, htons);
     GET_WINDOWS_FUNCTION(winsock_module, ntohs);
     GET_WINDOWS_FUNCTION(winsock_module, gethostname);
+#else
+    /* The toolchain I use for Windows Coverity builds doesn't know
+     * the type signatures of these */
+    GET_WINDOWS_FUNCTION_NO_TYPECHECK(winsock_module, ntohl);
+    GET_WINDOWS_FUNCTION_NO_TYPECHECK(winsock_module, htonl);
+    GET_WINDOWS_FUNCTION_NO_TYPECHECK(winsock_module, htons);
+    GET_WINDOWS_FUNCTION_NO_TYPECHECK(winsock_module, ntohs);
+    GET_WINDOWS_FUNCTION_NO_TYPECHECK(winsock_module, gethostname);
+#endif
     GET_WINDOWS_FUNCTION(winsock_module, gethostbyname);
     GET_WINDOWS_FUNCTION(winsock_module, getservbyname);
     GET_WINDOWS_FUNCTION(winsock_module, inet_addr);
     GET_WINDOWS_FUNCTION(winsock_module, inet_ntoa);
-#if defined _MSC_VER && _MSC_VER < 1900
-    /* Older Visual Studio doesn't know about this function at all, so
-     * can't type-check it */
+#if (defined _MSC_VER && _MSC_VER < 1900) || defined __MINGW32__
+    /* Older Visual Studio, and MinGW as of Ubuntu 16.04, don't know
+     * about this function at all, so can't type-check it */
     GET_WINDOWS_FUNCTION_NO_TYPECHECK(winsock_module, inet_ntop);
 #else
     GET_WINDOWS_FUNCTION(winsock_module, inet_ntop);
@@ -338,7 +348,7 @@ void sk_init(void)
     if (!sk_startup(2,2) &&
 	!sk_startup(2,0) &&
 	!sk_startup(1,1)) {
-	fatalbox("Unable to initialise WinSock");
+	modalfatalbox("Unable to initialise WinSock");
     }
 
     sktree = newtree234(cmpfortree);
@@ -548,7 +558,7 @@ SockAddr sk_namelookup(const char *host, char **canonicalname,
 
     if ((a = p_inet_addr(host)) == (unsigned long) INADDR_NONE) {
 	struct hostent *h = NULL;
-	int err;
+	int err = 0;
 #ifndef NO_IPV6
 	/*
 	 * Use getaddrinfo when it's available
@@ -1519,26 +1529,20 @@ void try_send(Actual_Socket s)
 		 */
 		s->writable = FALSE;
 		return;
-	    } else if (nsent == 0 ||
-		       err == WSAECONNABORTED || err == WSAECONNRESET) {
+	    } else {
 		/*
-		 * If send() returns CONNABORTED or CONNRESET, we
-		 * unfortunately can't just call plug_closing(),
-		 * because it's quite likely that we're currently
-		 * _in_ a call from the code we'd be calling back
-		 * to, so we'd have to make half the SSH code
-		 * reentrant. Instead we flag a pending error on
-		 * the socket, to be dealt with (by calling
-		 * plug_closing()) at some suitable future moment.
+		 * If send() returns a socket error, we unfortunately
+		 * can't just call plug_closing(), because it's quite
+		 * likely that we're currently _in_ a call from the
+		 * code we'd be calling back to, so we'd have to make
+		 * half the SSH code reentrant. Instead we flag a
+		 * pending error on the socket, to be dealt with (by
+		 * calling plug_closing()) at some suitable future
+		 * moment.
 		 */
 		s->pending_error = err;
                 queue_toplevel_callback(socket_error_callback, s);
 		return;
-	    } else {
-		/* We're inside the Windows frontend here, so we know
-		 * that the frontend handle is unnecessary. */
-		logevent(NULL, winsock_error_string(err));
-		fatalbox("%s", winsock_error_string(err));
 	    }
 	} else {
 	    if (s->sending_oob) {
@@ -1625,9 +1629,9 @@ static void sk_tcp_write_eof(Socket sock)
 	try_send(s);
 }
 
-int select_result(WPARAM wParam, LPARAM lParam)
+void select_result(WPARAM wParam, LPARAM lParam)
 {
-    int ret, open;
+    int ret;
     DWORD err;
     char buf[20480];		       /* nice big buffer for plenty of speed */
     Actual_Socket s;
@@ -1636,11 +1640,11 @@ int select_result(WPARAM wParam, LPARAM lParam)
     /* wParam is the socket itself */
 
     if (wParam == 0)
-	return 1;		       /* boggle */
+	return;		       /* boggle */
 
     s = find234(sktree, (void *) wParam, cmpforsearch);
     if (!s)
-	return 1;		       /* boggle */
+	return;		       /* boggle */
 
     if ((err = WSAGETSELECTERROR(lParam)) != 0) {
 	/*
@@ -1657,9 +1661,8 @@ int select_result(WPARAM wParam, LPARAM lParam)
 	    }
 	}
 	if (err != 0)
-	    return plug_closing(s->plug, winsock_error_string(err), err, 0);
-	else
-	    return 1;
+	    plug_closing(s->plug, winsock_error_string(err), err, 0);
+	return;
     }
 
     noise_ultralight(lParam);
@@ -1712,12 +1715,11 @@ int select_result(WPARAM wParam, LPARAM lParam)
 	    }
 	}
 	if (ret < 0) {
-	    return plug_closing(s->plug, winsock_error_string(err), err,
-				0);
+	    plug_closing(s->plug, winsock_error_string(err), err, 0);
 	} else if (0 == ret) {
-	    return plug_closing(s->plug, NULL, 0, 0);
+	    plug_closing(s->plug, NULL, 0, 0);
 	} else {
-	    return plug_receive(s->plug, atmark ? 0 : 1, buf, ret);
+	    plug_receive(s->plug, atmark ? 0 : 1, buf, ret);
 	}
 	break;
       case FD_OOB:
@@ -1730,14 +1732,10 @@ int select_result(WPARAM wParam, LPARAM lParam)
 	ret = p_recv(s->s, buf, sizeof(buf), MSG_OOB);
 	noise_ultralight(ret);
 	if (ret <= 0) {
-	    const char *str = (ret == 0 ? "Internal networking trouble" :
-			 winsock_error_string(p_WSAGetLastError()));
-	    /* We're inside the Windows frontend here, so we know
-	     * that the frontend handle is unnecessary. */
-	    logevent(NULL, str);
-	    fatalbox("%s", str);
+            int err = p_WSAGetLastError();
+	    plug_closing(s->plug, winsock_error_string(err), err, 0);
 	} else {
-	    return plug_receive(s->plug, 2, buf, ret);
+	    plug_receive(s->plug, 2, buf, ret);
 	}
 	break;
       case FD_WRITE:
@@ -1753,23 +1751,21 @@ int select_result(WPARAM wParam, LPARAM lParam)
 	break;
       case FD_CLOSE:
 	/* Signal a close on the socket. First read any outstanding data. */
-	open = 1;
 	do {
 	    ret = p_recv(s->s, buf, sizeof(buf), 0);
 	    if (ret < 0) {
 		err = p_WSAGetLastError();
 		if (err == WSAEWOULDBLOCK)
 		    break;
-		return plug_closing(s->plug, winsock_error_string(err),
-				    err, 0);
+		plug_closing(s->plug, winsock_error_string(err), err, 0);
 	    } else {
 		if (ret)
-		    open &= plug_receive(s->plug, 0, buf, ret);
+		    plug_receive(s->plug, 0, buf, ret);
 		else
-		    open &= plug_closing(s->plug, NULL, 0, 0);
+		    plug_closing(s->plug, NULL, 0, 0);
 	    }
 	} while (ret > 0);
-	return open;
+	return;
        case FD_ACCEPT:
 	{
 #ifdef NO_IPV6
@@ -1807,8 +1803,6 @@ int select_result(WPARAM wParam, LPARAM lParam)
 	    }
 	}
     }
-
-    return 1;
 }
 
 /*

@@ -24,6 +24,7 @@
 #include "storage.h"
 #include "win_res.h"
 #include "winsecur.h"
+#include "tree234.h"
 
 #ifndef NO_MULTIMON
 #include <multimon.h>
@@ -51,7 +52,8 @@
 #define IDM_SAVEDSESS 0x0160
 #define IDM_COPYALL   0x0170
 #define IDM_FULLSCREEN	0x0180
-#define IDM_PASTE     0x0190
+#define IDM_COPY      0x0190
+#define IDM_PASTE     0x01A0
 #define IDM_SPECIALSEP 0x0200
 
 #define IDM_SPECIAL_MIN 0x0400
@@ -104,7 +106,8 @@ static int is_full_screen(void);
 static void make_full_screen(void);
 static void clear_full_screen(void);
 static void flip_full_screen(void);
-static int process_clipdata(HGLOBAL clipdata, int unicode);
+static void process_clipdata(HGLOBAL clipdata, int unicode);
+static void setup_clipboards(Terminal *, Conf *);
 
 /* Window layout information */
 static void reset_window(int);
@@ -133,9 +136,6 @@ static int reconfiguring = FALSE;
 static const struct telnet_special *specials = NULL;
 static HMENU specials_menu = NULL;
 static int n_specials = 0;
-
-static wchar_t *clipboard_contents;
-static size_t clipboard_length;
 
 #define TIMING_TIMER_ID 1234
 static long timing_next_time;
@@ -198,6 +198,9 @@ static int descent;
 #define NEXTCOLOURS 240
 #define NALLCOLOURS (NCFGCOLOURS + NEXTCOLOURS)
 static COLORREF colours[NALLCOLOURS];
+struct rgb {
+    int r, g, b;
+} colours_rgb[NALLCOLOURS];
 static HPALETTE pal;
 static LPLOGPALETTE logpal;
 static RGBTRIPLE defpal[NALLCOLOURS];
@@ -356,10 +359,11 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
     hinst = inst;
     hwnd = NULL;
     flags = FLAG_VERBOSE | FLAG_INTERACTIVE;
+    cmdline_tooltype |= TOOLTYPE_HOST_ARG | TOOLTYPE_PORT_ARG;
 
     sk_init();
 
-    InitCommonControls();
+    init_common_controls();
 
     /* Set Explicit App User Model Id so that jump lists don't cause
        PuTTY to hang on to removable media. */
@@ -412,11 +416,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
      */
     {
 	char *p;
-	int got_host = 0;
-	/* By default, we bring up the config dialog, rather than launching
-	 * a session. This gets set to TRUE if something happens to change
-	 * that (e.g., a hostname is specified on the command-line). */
-	int allow_launch = FALSE;
+        int special_launchable_argument = FALSE;
 
 	default_protocol = be_default_protocol;
 	/* Find the appropriate default port. */
@@ -466,7 +466,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
 	    if (!conf_launchable(conf) && !do_config()) {
 		cleanup_exit(0);
 	    }
-	    allow_launch = TRUE;    /* allow it to be launched directly */
+            special_launchable_argument = TRUE;
 	} else if (*p == '&') {
 	    /*
 	     * An initial & means we've been given a command line
@@ -486,7 +486,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
 	    } else if (!do_config()) {
 		cleanup_exit(0);
 	    }
-	    allow_launch = TRUE;
+            special_launchable_argument = TRUE;
 	} else if (!*p) {
             /* Do-nothing case for an empty command line - or rather,
              * for a command line that's empty _after_ we strip off
@@ -541,52 +541,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
 		    pgp_fingerprints();
 		    exit(1);
 		} else if (*p != '-') {
-		    char *q = p;
-		    if (got_host) {
-			/*
-			 * If we already have a host name, treat
-			 * this argument as a port number. NB we
-			 * have to treat this as a saved -P
-			 * argument, so that it will be deferred
-			 * until it's a good moment to run it.
-			 */
-			int ret = cmdline_process_param("-P", p, 1, conf);
-			assert(ret == 2);
-		    } else if (!strncmp(q, "telnet:", 7)) {
-			/*
-			 * If the hostname starts with "telnet:",
-			 * set the protocol to Telnet and process
-			 * the string as a Telnet URL.
-			 */
-			char c;
-
-			q += 7;
-			if (q[0] == '/' && q[1] == '/')
-			    q += 2;
-			conf_set_int(conf, CONF_protocol, PROT_TELNET);
-			p = q;
-                        p += host_strcspn(p, ":/");
-			c = *p;
-			if (*p)
-			    *p++ = '\0';
-			if (c == ':')
-			    conf_set_int(conf, CONF_port, atoi(p));
-			else
-			    conf_set_int(conf, CONF_port, -1);
-			conf_set_str(conf, CONF_host, q);
-			got_host = 1;
-		    } else {
-			/*
-			 * Otherwise, treat this argument as a host
-			 * name.
-			 */
-			while (*p && !isspace(*p))
-			    p++;
-			if (*p)
-			    *p++ = '\0';
-			conf_set_str(conf, CONF_host, q);
-			got_host = 1;
-		    }
+		    cmdline_error("unexpected argument \"%s\"", p);
 		} else {
 		    cmdline_error("unknown option \"%s\"", p);
 		}
@@ -595,70 +550,16 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
 
 	cmdline_run_saved(conf);
 
-	if (loaded_session || got_host)
-	    allow_launch = TRUE;
-
-	if ((!allow_launch || !conf_launchable(conf)) && !do_config()) {
-	    cleanup_exit(0);
-	}
-
 	/*
-	 * Muck about with the hostname in various ways.
-	 */
-	{
-	    char *hostbuf = dupstr(conf_get_str(conf, CONF_host));
-	    char *host = hostbuf;
-	    char *p, *q;
-
-	    /*
-	     * Trim leading whitespace.
-	     */
-	    host += strspn(host, " \t");
-
-	    /*
-	     * See if host is of the form user@host, and separate
-	     * out the username if so.
-	     */
-	    if (host[0] != '\0') {
-		char *atsign = strrchr(host, '@');
-		if (atsign) {
-		    *atsign = '\0';
-		    conf_set_str(conf, CONF_username, host);
-		    host = atsign + 1;
-		}
-	    }
-
-            /*
-             * Trim a colon suffix off the hostname if it's there. In
-             * order to protect unbracketed IPv6 address literals
-             * against this treatment, we do not do this if there's
-             * _more_ than one colon.
-             */
-            {
-                char *c = host_strchr(host, ':');
- 
-                if (c) {
-                    char *d = host_strchr(c+1, ':');
-                    if (!d)
-                        *c = '\0';
-                }
-            }
-
-	    /*
-	     * Remove any remaining whitespace.
-	     */
-	    p = hostbuf;
-	    q = host;
-	    while (*q) {
-		if (*q != ' ' && *q != '\t')
-		    *p++ = *q;
-		q++;
-	    }
-	    *p = '\0';
-
-	    conf_set_str(conf, CONF_host, hostbuf);
-	    sfree(hostbuf);
+         * Bring up the config dialog if the command line hasn't
+         * (explicitly) specified a launchable configuration.
+         */
+        if (!(special_launchable_argument || cmdline_host_ok(conf))) {
+            if (!do_config())
+                cleanup_exit(0);
 	}
+
+        prepare_session(conf);
     }
 
     if (!prev) {
@@ -738,6 +639,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
      * timer_change_notify() which will expect hwnd to exist.)
      */
     term = term_init(conf, &ucsdata, NULL);
+    setup_clipboards(term, conf);
     logctx = log_init(NULL, conf);
     term_provide_logctx(term, logctx);
     term_size(term, conf_get_int(conf, CONF_height),
@@ -810,6 +712,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
 
 	popup_menus[SYSMENU].menu = GetSystemMenu(hwnd, FALSE);
 	popup_menus[CTXMENU].menu = CreatePopupMenu();
+	AppendMenu(popup_menus[CTXMENU].menu, MF_ENABLED, IDM_COPY, "&Copy");
 	AppendMenu(popup_menus[CTXMENU].menu, MF_ENABLED, IDM_PASTE, "&Paste");
 
 	savedsess_menu = CreateMenu();
@@ -949,6 +852,30 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
     finished:
     cleanup_exit(msg.wParam);	       /* this doesn't return... */
     return msg.wParam;		       /* ... but optimiser doesn't know */
+}
+
+static void setup_clipboards(Terminal *term, Conf *conf)
+{
+    assert(term->mouse_select_clipboards[0] == CLIP_LOCAL);
+
+    term->n_mouse_select_clipboards = 1;
+
+    if (conf_get_int(conf, CONF_mouseautocopy)) {
+        term->mouse_select_clipboards[
+            term->n_mouse_select_clipboards++] = CLIP_SYSTEM;
+    }
+
+    switch (conf_get_int(conf, CONF_mousepaste)) {
+      case CLIPUI_IMPLICIT:
+        term->mouse_paste_clipboard = CLIP_LOCAL;
+        break;
+      case CLIPUI_EXPLICIT:
+        term->mouse_paste_clipboard = CLIP_SYSTEM;
+        break;
+      default:
+        term->mouse_paste_clipboard = CLIP_NULL;
+        break;
+    }
 }
 
 /*
@@ -1264,6 +1191,19 @@ static void systopalette(void)
     }
 }
 
+static void internal_set_colour(int i, int r, int g, int b)
+{
+    assert(i >= 0);
+    assert(i < NALLCOLOURS);
+    if (pal)
+        colours[i] = PALETTERGB(r, g, b);
+    else
+        colours[i] = RGB(r, g, b);
+    colours_rgb[i].r = r;
+    colours_rgb[i].g = g;
+    colours_rgb[i].b = b;
+}
+
 /*
  * Set up the colour palette.
  */
@@ -1298,15 +1238,9 @@ static void init_palette(void)
 	}
 	ReleaseDC(hwnd, hdc);
     }
-    if (pal)
-	for (i = 0; i < NALLCOLOURS; i++)
-	    colours[i] = PALETTERGB(defpal[i].rgbtRed,
-				    defpal[i].rgbtGreen,
-				    defpal[i].rgbtBlue);
-    else
-	for (i = 0; i < NALLCOLOURS; i++)
-	    colours[i] = RGB(defpal[i].rgbtRed,
-			     defpal[i].rgbtGreen, defpal[i].rgbtBlue);
+    for (i = 0; i < NALLCOLOURS; i++)
+        internal_set_colour(i, defpal[i].rgbtRed,
+                            defpal[i].rgbtGreen, defpal[i].rgbtBlue);
 }
 
 /*
@@ -1700,7 +1634,7 @@ void request_resize(void *frontend, int w, int h)
 {
     int width, height;
 
-    /* If the window is maximized supress resizing attempts */
+    /* If the window is maximized suppress resizing attempts */
     if (IsZoomed(hwnd)) {
 	if (conf_get_int(conf, CONF_resize_action) == RESIZE_TERM)
 	    return;
@@ -2089,6 +2023,8 @@ static void conf_cache_data(void)
     vtmode = conf_get_int(conf, CONF_vtmode);
 }
 
+static const int clips_system[] = { CLIP_SYSTEM };
+
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT message,
 				WPARAM wParam, LPARAM lParam)
 {
@@ -2301,6 +2237,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT message,
 
 		/* Pass new config data to the terminal */
 		term_reconfig(term, conf);
+                setup_clipboards(term, conf);
 
 		/* Pass new config data to the back end */
 		if (back)
@@ -2422,10 +2359,13 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT message,
 	    }
 	    break;
 	  case IDM_COPYALL:
-	    term_copyall(term);
+            term_copyall(term, clips_system, lenof(clips_system));
+	    break;
+	  case IDM_COPY:
+            term_request_copy(term, clips_system, lenof(clips_system));
 	    break;
 	  case IDM_PASTE:
-	    request_paste(NULL);
+	    term_request_paste(term, CLIP_SYSTEM);
 	    break;
 	  case IDM_CLRSB:
 	    term_clrsb(term);
@@ -2657,7 +2597,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT message,
 	break;
       case WM_DESTROYCLIPBOARD:
 	if (!ignore_clip)
-	    term_deselect(term);
+	    term_lost_clipboard_ownership(term, CLIP_SYSTEM);
 	ignore_clip = FALSE;
 	return 0;
       case WM_PAINT:
@@ -3267,8 +3207,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT message,
 	}
 	return 0;
       case WM_GOT_CLIPDATA:
-	if (process_clipdata((HGLOBAL)lParam, wParam))
-	    term_do_paste(term);
+	process_clipdata((HGLOBAL)lParam, wParam);
 	return 0;
       default:
 	if (message == wm_mousewheel || message == WM_MOUSEWHEEL) {
@@ -3395,7 +3334,7 @@ static void sys_cursor_update(void)
  * We are allowed to fiddle with the contents of `text'.
  */
 void do_text_internal(Context ctx, int x, int y, wchar_t *text, int len,
-		      unsigned long attr, int lattr)
+		      unsigned long attr, int lattr, truecolour truecolour)
 {
     COLORREF fg, bg, t;
     int nfg, nbg, nfont;
@@ -3429,7 +3368,8 @@ void do_text_internal(Context ctx, int x, int y, wchar_t *text, int len,
     y += offset_height;
 
     if ((attr & TATTR_ACTCURS) && (cursor_type == 0 || term->big_cursor)) {
-	attr &= ~(ATTR_REVERSE|ATTR_BLINK|ATTR_COLOURS);
+        truecolour.fg = truecolour.bg = optionalrgb_none;
+	attr &= ~(ATTR_REVERSE|ATTR_BLINK|ATTR_COLOURS|ATTR_DIM);
 	/* cursor fg and bg */
 	attr |= (260 << ATTR_FGSHIFT) | (261 << ATTR_BGSHIFT);
         is_cursor = TRUE;
@@ -3510,9 +3450,15 @@ void do_text_internal(Context ctx, int x, int y, wchar_t *text, int len,
     if (!fonts[nfont])
 	nfont = FONT_NORMAL;
     if (attr & ATTR_REVERSE) {
+        struct optionalrgb trgb;
+
 	t = nfg;
 	nfg = nbg;
 	nbg = t;
+
+        trgb = truecolour.fg;
+        truecolour.fg = truecolour.bg;
+        truecolour.bg = trgb;
     }
     if (bold_colours && (attr & ATTR_BOLD) && !is_cursor) {
 	if (nfg < 16) nfg |= 8;
@@ -3522,8 +3468,22 @@ void do_text_internal(Context ctx, int x, int y, wchar_t *text, int len,
 	if (nbg < 16) nbg |= 8;
 	else if (nbg >= 256) nbg |= 1;
     }
-    fg = colours[nfg];
-    bg = colours[nbg];
+    if (!pal && truecolour.fg.enabled)
+	fg = RGB(truecolour.fg.r, truecolour.fg.g, truecolour.fg.b);
+    else
+	fg = colours[nfg];
+
+    if (!pal && truecolour.bg.enabled)
+	bg = RGB(truecolour.bg.r, truecolour.bg.g, truecolour.bg.b);
+    else
+	bg = colours[nbg];
+
+    if (!pal && (attr & ATTR_DIM)) {
+        fg = RGB(GetRValue(fg) * 2 / 3,
+                 GetGValue(fg) * 2 / 3,
+                 GetBValue(fg) * 2 / 3);
+    }
+
     SelectObject(hdc, fonts[nfont]);
     SetTextColor(hdc, fg);
     SetBkColor(hdc, bg);
@@ -3768,7 +3728,7 @@ void do_text_internal(Context ctx, int x, int y, wchar_t *text, int len,
  * Wrapper that handles combining characters.
  */
 void do_text(Context ctx, int x, int y, wchar_t *text, int len,
-	     unsigned long attr, int lattr)
+	     unsigned long attr, int lattr, truecolour truecolour)
 {
     if (attr & TATTR_COMBINING) {
 	unsigned long a = 0;
@@ -3778,13 +3738,13 @@ void do_text(Context ctx, int x, int y, wchar_t *text, int len,
 	    len0 = 2;
 	if (len-len0 >= 1 && IS_LOW_VARSEL(text[len0])) {
 	    attr &= ~TATTR_COMBINING;
-	    do_text_internal(ctx, x, y, text, len0+1, attr, lattr);
+	    do_text_internal(ctx, x, y, text, len0+1, attr, lattr, truecolour);
 	    text += len0+1;
 	    len -= len0+1;
 	    a = TATTR_COMBINING;
 	} else if (len-len0 >= 2 && IS_HIGH_VARSEL(text[len0], text[len0+1])) {
 	    attr &= ~TATTR_COMBINING;
-	    do_text_internal(ctx, x, y, text, len0+2, attr, lattr);
+	    do_text_internal(ctx, x, y, text, len0+2, attr, lattr, truecolour);
 	    text += len0+2;
 	    len -= len0+2;
 	    a = TATTR_COMBINING;
@@ -3794,22 +3754,21 @@ void do_text(Context ctx, int x, int y, wchar_t *text, int len,
 
 	while (len--) {
 	    if (len >= 1 && IS_SURROGATE_PAIR(text[0], text[1])) {
-		do_text_internal(ctx, x, y, text, 2, attr | a, lattr);
+		do_text_internal(ctx, x, y, text, 2, attr | a, lattr, truecolour);
 		len--;
 		text++;
-	    } else {
-                do_text_internal(ctx, x, y, text, 1, attr | a, lattr);
-            }
+	    } else
+                do_text_internal(ctx, x, y, text, 1, attr | a, lattr, truecolour);
 
 	    text++;
 	    a = TATTR_COMBINING;
 	}
     } else
-	do_text_internal(ctx, x, y, text, len, attr, lattr);
+	do_text_internal(ctx, x, y, text, len, attr, lattr, truecolour);
 }
 
 void do_cursor(Context ctx, int x, int y, wchar_t *text, int len,
-	       unsigned long attr, int lattr)
+	       unsigned long attr, int lattr, truecolour truecolour)
 {
 
     int fnt_width;
@@ -3821,7 +3780,7 @@ void do_cursor(Context ctx, int x, int y, wchar_t *text, int len,
 
     if ((attr & TATTR_ACTCURS) && (ctype == 0 || term->big_cursor)) {
 	if (*text != UCSWIDE) {
-	    do_text(ctx, x, y, text, len, attr, lattr);
+	    do_text(ctx, x, y, text, len, attr, lattr, truecolour);
 	    return;
 	}
 	ctype = 2;
@@ -3949,12 +3908,15 @@ int char_width(Context ctx, int uc) {
 DECL_WINDOWS_FUNCTION(static, BOOL, FlashWindowEx, (PFLASHWINFO));
 DECL_WINDOWS_FUNCTION(static, BOOL, ToUnicodeEx,
                       (UINT, UINT, const BYTE *, LPWSTR, int, UINT, HKL));
+DECL_WINDOWS_FUNCTION(static, BOOL, PlaySound, (LPCTSTR, HMODULE, DWORD));
 
 static void init_winfuncs(void)
 {
     HMODULE user32_module = load_system32_dll("user32.dll");
+    HMODULE winmm_module = load_system32_dll("winmm.dll");
     GET_WINDOWS_FUNCTION(user32_module, FlashWindowEx);
     GET_WINDOWS_FUNCTION(user32_module, ToUnicodeEx);
+    GET_WINDOWS_FUNCTION_PP(winmm_module, PlaySound);
 }
 
 /*
@@ -4192,6 +4154,15 @@ static int TranslateKey(UINT message, WPARAM wParam, LPARAM lParam,
 	    SendMessage(hwnd, WM_VSCROLL, SB_PAGEUP, 0);
 	    return 0;
 	}
+        if (wParam == VK_PRIOR && shift_state == 3) { /* ctrl-shift-pageup */
+            SendMessage(hwnd, WM_VSCROLL, SB_TOP, 0);
+            return 0;
+        }
+        if (wParam == VK_NEXT && shift_state == 3) { /* ctrl-shift-pagedown */
+            SendMessage(hwnd, WM_VSCROLL, SB_BOTTOM, 0);
+            return 0;
+        }
+
 	if (wParam == VK_PRIOR && shift_state == 2) {
 	    SendMessage(hwnd, WM_VSCROLL, SB_LINEUP, 0);
 	    return 0;
@@ -4208,8 +4179,54 @@ static int TranslateKey(UINT message, WPARAM wParam, LPARAM lParam,
 	    term_scroll_to_selection(term, (wParam == VK_PRIOR ? 0 : 1));
 	    return 0;
 	}
+	if (wParam == VK_INSERT && shift_state == 2) {
+            switch (conf_get_int(conf, CONF_ctrlshiftins)) {
+              case CLIPUI_IMPLICIT:
+                break;          /* no need to re-copy to CLIP_LOCAL */
+              case CLIPUI_EXPLICIT:
+                term_request_copy(term, clips_system, lenof(clips_system));
+                break;
+              default:
+                break;
+            }
+	    return 0;
+	}
 	if (wParam == VK_INSERT && shift_state == 1) {
-	    request_paste(NULL);
+            switch (conf_get_int(conf, CONF_ctrlshiftins)) {
+              case CLIPUI_IMPLICIT:
+                term_request_paste(term, CLIP_LOCAL);
+                break;
+              case CLIPUI_EXPLICIT:
+                term_request_paste(term, CLIP_SYSTEM);
+                break;
+              default:
+                break;
+            }
+	    return 0;
+	}
+	if (wParam == 'C' && shift_state == 3) {
+            switch (conf_get_int(conf, CONF_ctrlshiftcv)) {
+              case CLIPUI_IMPLICIT:
+                break;          /* no need to re-copy to CLIP_LOCAL */
+              case CLIPUI_EXPLICIT:
+                term_request_copy(term, clips_system, lenof(clips_system));
+                break;
+              default:
+                break;
+            }
+	    return 0;
+	}
+	if (wParam == 'V' && shift_state == 3) {
+            switch (conf_get_int(conf, CONF_ctrlshiftcv)) {
+              case CLIPUI_IMPLICIT:
+                term_request_paste(term, CLIP_LOCAL);
+                break;
+              case CLIPUI_EXPLICIT:
+                term_request_paste(term, CLIP_SYSTEM);
+                break;
+              default:
+                break;
+            }
 	    return 0;
 	}
 	if (left_alt && wParam == VK_F4 && conf_get_int(conf, CONF_alt_f4)) {
@@ -4777,7 +4794,7 @@ static int TranslateKey(UINT message, WPARAM wParam, LPARAM lParam,
 
 	    return p - output;
 	}
-	/* If we're definitly not building up an ALT-54321 then clear it */
+	/* If we're definitely not building up an ALT-54321 then clear it */
 	if (!left_alt)
 	    keys_unicode[0] = 0;
 	/* If we will be using alt_sum fix the 256s */
@@ -4854,15 +4871,24 @@ void free_ctx(Context ctx)
 
 static void real_palette_set(int n, int r, int g, int b)
 {
+    internal_set_colour(n, r, g, b);
     if (pal) {
 	logpal->palPalEntry[n].peRed = r;
 	logpal->palPalEntry[n].peGreen = g;
 	logpal->palPalEntry[n].peBlue = b;
 	logpal->palPalEntry[n].peFlags = PC_NOCOLLAPSE;
-	colours[n] = PALETTERGB(r, g, b);
 	SetPaletteEntries(pal, 0, NALLCOLOURS, logpal->palPalEntry);
-    } else
-	colours[n] = RGB(r, g, b);
+    }
+}
+
+int palette_get(void *frontend, int n, int *r, int *g, int *b)
+{
+    if (n < 0 || n >= NALLCOLOURS)
+	return FALSE;
+    *r = colours_rgb[n].r;
+    *g = colours_rgb[n].g;
+    *b = colours_rgb[n].b;
+    return TRUE;
 }
 
 void palette_set(void *frontend, int n, int r, int g, int b)
@@ -4892,17 +4918,14 @@ void palette_reset(void *frontend)
 
     /* And this */
     for (i = 0; i < NALLCOLOURS; i++) {
+        internal_set_colour(i, defpal[i].rgbtRed,
+                            defpal[i].rgbtGreen, defpal[i].rgbtBlue);
 	if (pal) {
 	    logpal->palPalEntry[i].peRed = defpal[i].rgbtRed;
 	    logpal->palPalEntry[i].peGreen = defpal[i].rgbtGreen;
 	    logpal->palPalEntry[i].peBlue = defpal[i].rgbtBlue;
 	    logpal->palPalEntry[i].peFlags = 0;
-	    colours[i] = PALETTERGB(defpal[i].rgbtRed,
-				    defpal[i].rgbtGreen,
-				    defpal[i].rgbtBlue);
-	} else
-	    colours[i] = RGB(defpal[i].rgbtRed,
-			     defpal[i].rgbtGreen, defpal[i].rgbtBlue);
+	}
     }
 
     if (pal) {
@@ -4918,10 +4941,14 @@ void palette_reset(void *frontend)
     }
 }
 
-void write_aclip(void *frontend, char *data, int len, int must_deselect)
+void write_aclip(void *frontend, int clipboard,
+                 char *data, int len, int must_deselect)
 {
     HGLOBAL clipdata;
     void *lock;
+
+    if (clipboard != CLIP_SYSTEM)
+        return;
 
     clipdata = GlobalAlloc(GMEM_DDESHARE | GMEM_MOVEABLE, len + 1);
     if (!clipdata)
@@ -4947,14 +4974,31 @@ void write_aclip(void *frontend, char *data, int len, int must_deselect)
 	SendMessage(hwnd, WM_IGNORE_CLIP, FALSE, 0);
 }
 
+typedef struct _rgbindex {
+    int index;
+    COLORREF ref;
+} rgbindex;
+
+int cmpCOLORREF(void *va, void *vb)
+{
+    COLORREF a = ((rgbindex *)va)->ref;
+    COLORREF b = ((rgbindex *)vb)->ref;
+    return (a < b) ? -1 : (a > b) ? +1 : 0;
+}
+
 /*
  * Note: unlike write_aclip() this will not append a nul.
  */
-void write_clip(void *frontend, wchar_t * data, int *attr, int len, int must_deselect)
+void write_clip(void *frontend, int clipboard,
+                wchar_t *data, int *attr, truecolour *truecolour, int len,
+                int must_deselect)
 {
     HGLOBAL clipdata, clipdata2, clipdata3;
     int len2;
     void *lock, *lock2, *lock3;
+
+    if (clipboard != CLIP_SYSTEM)
+        return;
 
     len2 = WideCharToMultiByte(CP_ACP, 0, data, len, 0, 0, NULL, NULL);
 
@@ -4993,12 +5037,15 @@ void write_clip(void *frontend, wchar_t * data, int *attr, int len, int must_des
 	int rtfsize = 0;
 	int multilen, blen, alen, totallen, i;
 	char before[16], after[4];
-	int fgcolour,  lastfgcolour  = 0;
-	int bgcolour,  lastbgcolour  = 0;
+	int fgcolour,  lastfgcolour  = -1;
+	int bgcolour,  lastbgcolour  = -1;
+	COLORREF fg,   lastfg = -1;
+	COLORREF bg,   lastbg = -1;
 	int attrBold,  lastAttrBold  = 0;
 	int attrUnder, lastAttrUnder = 0;
 	int palette[NALLCOLOURS];
 	int numcolours;
+	tree234 *rgbtree = NULL;
 	FontSpec *font = conf_get_fontspec(conf, CONF_font);
 
 	get_unitab(CP_ACP, unitab, 0);
@@ -5036,7 +5083,7 @@ void write_clip(void *frontend, wchar_t * data, int *attr, int len, int must_des
 			fgcolour ++;
 		}
 
-		if (attr[i] & ATTR_BLINK) {
+		if ((attr[i] & ATTR_BLINK)) {
 		    if (bgcolour  <   8)	/* ANSI colours */
 			bgcolour +=   8;
     		    else if (bgcolour >= 256)	/* Default colours */
@@ -5047,6 +5094,28 @@ void write_clip(void *frontend, wchar_t * data, int *attr, int len, int must_des
 		palette[bgcolour]++;
 	    }
 
+	    if (truecolour) {
+		rgbtree = newtree234(cmpCOLORREF);
+		for (i = 0; i < (len-1); i++) {
+		    if (truecolour[i].fg.enabled) {
+			rgbindex *rgbp = snew(rgbindex);
+			rgbp->ref = RGB(truecolour[i].fg.r,
+			                truecolour[i].fg.g,
+			                truecolour[i].fg.b);
+			if (add234(rgbtree, rgbp) != rgbp)
+			    sfree(rgbp);
+		    }
+		    if (truecolour[i].bg.enabled) {
+			rgbindex *rgbp = snew(rgbindex);
+			rgbp->ref = RGB(truecolour[i].bg.r,
+			                truecolour[i].bg.g,
+			                truecolour[i].bg.b);
+			if (add234(rgbtree, rgbp) != rgbp)
+			    sfree(rgbp);
+		    }
+		}
+	    }
+
 	    /*
 	     * Next - Create a reduced palette
 	     */
@@ -5054,6 +5123,12 @@ void write_clip(void *frontend, wchar_t * data, int *attr, int len, int must_des
 	    for (i = 0; i < NALLCOLOURS; i++) {
 		if (palette[i] != 0)
 		    palette[i]  = ++numcolours;
+	    }
+
+	    if (rgbtree) {
+		rgbindex *rgbp;
+		for (i = 0; (rgbp = index234(rgbtree, i)) != NULL; i++)
+		    rgbp->index = ++numcolours;
 	    }
 
 	    /*
@@ -5067,6 +5142,12 @@ void write_clip(void *frontend, wchar_t * data, int *attr, int len, int must_des
 		if (palette[i] != 0) {
 		    rtflen += sprintf(&rtf[rtflen], "\\red%d\\green%d\\blue%d;", defpal[i].rgbtRed, defpal[i].rgbtGreen, defpal[i].rgbtBlue);
 		}
+	    }
+	    if (rgbtree) {
+		rgbindex *rgbp;
+		for (i = 0; (rgbp = index234(rgbtree, i)) != NULL; i++)
+		    rtflen += sprintf(&rtf[rtflen], "\\red%d\\green%d\\blue%d;",
+				      GetRValue(rgbp->ref), GetGValue(rgbp->ref), GetBValue(rgbp->ref));
 	    }
 	    strcpy(&rtf[rtflen], "}");
 	    rtflen ++;
@@ -5111,23 +5192,44 @@ void write_clip(void *frontend, wchar_t * data, int *attr, int len, int must_des
                 /*
                  * Determine foreground and background colours
                  */
-                fgcolour = ((attr[tindex] & ATTR_FGMASK) >> ATTR_FGSHIFT);
-                bgcolour = ((attr[tindex] & ATTR_BGMASK) >> ATTR_BGSHIFT);
+		if (truecolour && truecolour[tindex].fg.enabled) {
+		    fgcolour = -1;
+		    fg = RGB(truecolour[tindex].fg.r,
+		             truecolour[tindex].fg.g,
+		             truecolour[tindex].fg.b);
+		} else {
+		    fgcolour = ((attr[tindex] & ATTR_FGMASK) >> ATTR_FGSHIFT);
+		    fg = -1;
+		}
+
+		if (truecolour && truecolour[tindex].bg.enabled) {
+		    bgcolour = -1;
+		    bg = RGB(truecolour[tindex].bg.r,
+		             truecolour[tindex].bg.g,
+		             truecolour[tindex].bg.b);
+		} else {
+		    bgcolour = ((attr[tindex] & ATTR_BGMASK) >> ATTR_BGSHIFT);
+		    bg = -1;
+		}
 
 		if (attr[tindex] & ATTR_REVERSE) {
 		    int tmpcolour = fgcolour;	    /* Swap foreground and background */
 		    fgcolour = bgcolour;
 		    bgcolour = tmpcolour;
+
+		    COLORREF tmpref = fg;
+		    fg = bg;
+		    bg = tmpref;
 		}
 
-		if (bold_colours && (attr[tindex] & ATTR_BOLD)) {
+		if (bold_colours && (attr[tindex] & ATTR_BOLD) && (fgcolour >= 0)) {
 		    if (fgcolour  <   8)	    /* ANSI colours */
 			fgcolour +=   8;
 		    else if (fgcolour >= 256)	    /* Default colours */
 			fgcolour ++;
                 }
 
-		if (attr[tindex] & ATTR_BLINK) {
+		if ((attr[tindex] & ATTR_BLINK) && (bgcolour >= 0)) {
 		    if (bgcolour  <   8)	    /* ANSI colours */
 			bgcolour +=   8;
 		    else if (bgcolour >= 256)	    /* Default colours */
@@ -5166,15 +5268,33 @@ void write_clip(void *frontend, wchar_t * data, int *attr, int len, int must_des
                 /*
                  * Write RTF text attributes
                  */
-		if (lastfgcolour != fgcolour) {
-                    lastfgcolour  = fgcolour;
-		    rtflen       += sprintf(&rtf[rtflen], "\\cf%d ", (fgcolour >= 0) ? palette[fgcolour] : 0);
-                }
+		if ((lastfgcolour != fgcolour) || (lastfg != fg)) {
+		    lastfgcolour  = fgcolour;
+		    lastfg        = fg;
+		    if (fg == -1)
+			rtflen += sprintf(&rtf[rtflen], "\\cf%d ",
+					  (fgcolour >= 0) ? palette[fgcolour] : 0);
+		    else {
+			rgbindex rgb, *rgbp;
+			rgb.ref = fg;
+			if ((rgbp = find234(rgbtree, &rgb, NULL)) != NULL)
+			    rtflen += sprintf(&rtf[rtflen], "\\cf%d ", rgbp->index);
+		    }
+		}
 
-                if (lastbgcolour != bgcolour) {
-                    lastbgcolour  = bgcolour;
-                    rtflen       += sprintf(&rtf[rtflen], "\\highlight%d ", (bgcolour >= 0) ? palette[bgcolour] : 0);
-                }
+		if ((lastbgcolour != bgcolour) || (lastbg != bg)) {
+		    lastbgcolour  = bgcolour;
+		    lastbg        = bg;
+		    if (bg == -1)
+			rtflen += sprintf(&rtf[rtflen], "\\highlight%d ",
+					  (bgcolour >= 0) ? palette[bgcolour] : 0);
+		    else {
+			rgbindex rgb, *rgbp;
+			rgb.ref = bg;
+			if ((rgbp = find234(rgbtree, &rgb, NULL)) != NULL)
+			    rtflen += sprintf(&rtf[rtflen], "\\highlight%d ", rgbp->index);
+		    }
+		}
 
 		if (lastAttrBold != attrBold) {
 		    lastAttrBold  = attrBold;
@@ -5196,8 +5316,8 @@ void write_clip(void *frontend, wchar_t * data, int *attr, int len, int must_des
 		multilen = WideCharToMultiByte(CP_ACP, 0, unitab+uindex, 1,
 					       NULL, 0, NULL, NULL);
 		if (multilen != 1) {
-		    blen = sprintf(before, "{\\uc%d\\u%d", multilen,
-				   udata[uindex]);
+		    blen = sprintf(before, "{\\uc%d\\u%d", (int)multilen,
+				   (int)udata[uindex]);
 		    alen = 1; strcpy(after, "}");
 		} else {
 		    blen = sprintf(before, "\\u%d", udata[uindex]);
@@ -5255,6 +5375,13 @@ void write_clip(void *frontend, wchar_t * data, int *attr, int len, int must_des
 	    GlobalUnlock(clipdata3);
 	}
 	sfree(rtf);
+
+	if (rgbtree) {
+	    rgbindex *rgbp;
+	    while ((rgbp = delpos234(rgbtree, 0)) != NULL)
+		sfree(rgbp);
+	    freetree234(rgbtree);
+	}
     } else
 	clipdata3 = NULL;
 
@@ -5297,11 +5424,10 @@ static DWORD WINAPI clipboard_read_threadfunc(void *param)
     return 0;
 }
 
-static int process_clipdata(HGLOBAL clipdata, int unicode)
+static void process_clipdata(HGLOBAL clipdata, int unicode)
 {
-    sfree(clipboard_contents);
-    clipboard_contents = NULL;
-    clipboard_length = 0;
+    wchar_t *clipboard_contents = NULL;
+    size_t clipboard_length = 0;
 
     if (unicode) {
 	wchar_t *p = GlobalLock(clipdata);
@@ -5314,7 +5440,7 @@ static int process_clipdata(HGLOBAL clipdata, int unicode)
 	    clipboard_contents = snewn(clipboard_length + 1, wchar_t);
 	    memcpy(clipboard_contents, p, clipboard_length * sizeof(wchar_t));
 	    clipboard_contents[clipboard_length] = L'\0';
-	    return TRUE;
+	    term_do_paste(term, clipboard_contents, clipboard_length);
 	}
     } else {
 	char *s = GlobalLock(clipdata);
@@ -5327,15 +5453,17 @@ static int process_clipdata(HGLOBAL clipdata, int unicode)
 				clipboard_contents, i);
 	    clipboard_length = i - 1;
 	    clipboard_contents[clipboard_length] = L'\0';
-	    return TRUE;
+	    term_do_paste(term, clipboard_contents, clipboard_length);
 	}
     }
 
-    return FALSE;
+    sfree(clipboard_contents);
 }
 
-void request_paste(void *frontend)
+void frontend_request_paste(void *frontend, int clipboard)
 {
+    assert(clipboard == CLIP_SYSTEM);
+
     /*
      * I always thought pasting was synchronous in Windows; the
      * clipboard access functions certainly _look_ synchronous,
@@ -5355,14 +5483,6 @@ void request_paste(void *frontend)
     DWORD in_threadid; /* required for Win9x */
     CreateThread(NULL, 0, clipboard_read_threadfunc,
 		 hwnd, 0, &in_threadid);
-}
-
-void get_clip(void *frontend, wchar_t **p, int *len)
-{
-    if (p) {
-	*p = clipboard_contents;
-	*len = clipboard_length;
-    }
 }
 
 #if 0
@@ -5385,23 +5505,6 @@ void optimised_move(void *frontend, int to, int from, int lines)
     ScrollWindow(hwnd, 0, (to - from) * font_height, &r, &r);
 }
 #endif
-
-/*
- * Print a message box and perform a fatal exit.
- */
-void fatalbox(const char *fmt, ...)
-{
-    va_list ap;
-    char *stuff, morestuff[100];
-
-    va_start(ap, fmt);
-    stuff = dupvprintf(fmt, ap);
-    va_end(ap);
-    sprintf(morestuff, "%.70s Fatal Error", appname);
-    MessageBox(hwnd, stuff, morestuff, MB_ICONERROR | MB_OK);
-    sfree(stuff);
-    cleanup_exit(1);
-}
 
 /*
  * Print a modal (Really Bad) message box and perform a fatal exit.
@@ -5540,8 +5643,8 @@ void do_beep(void *frontend, int mode)
 	lastbeep = GetTickCount();
     } else if (mode == BELL_WAVEFILE) {
 	Filename *bell_wavefile = conf_get_filename(conf, CONF_bell_wavefile);
-	if (!PlaySound(bell_wavefile->path, NULL,
-		       SND_ASYNC | SND_FILENAME)) {
+	if (!p_PlaySound || !p_PlaySound(bell_wavefile->path, NULL,
+                         SND_ASYNC | SND_FILENAME)) {
 	    char buf[sizeof(bell_wavefile->path) + 80];
 	    char otherbuf[100];
 	    sprintf(buf, "Unable to play sound file\n%s\n"

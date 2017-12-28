@@ -14,12 +14,12 @@
 
 [Setup]
 AppName=PuTTY
-AppVerName=PuTTY version 0.68
-VersionInfoTextVersion=Release 0.68
-AppVersion=0.68
-VersionInfoVersion=0.68.0.0
+AppVerName=PuTTY version 0.70
+VersionInfoTextVersion=Release 0.70
+AppVersion=0.70
+VersionInfoVersion=0.70.0.0
 AppPublisher=Simon Tatham
-AppPublisherURL=http://www.chiark.greenend.org.uk/~sgtatham/putty/
+AppPublisherURL=https://www.chiark.greenend.org.uk/~sgtatham/putty/
 AppReadmeFile={app}\README.txt
 DefaultDirName={pf}\PuTTY
 DefaultGroupName=PuTTY

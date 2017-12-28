@@ -40,6 +40,7 @@ struct termchar {
      */
     unsigned long chr;
     unsigned long attr;
+    truecolour truecolour;
 
     /*
      * The cc_next field is used to link multiple termchars
@@ -102,6 +103,7 @@ struct terminal_tag {
 #endif /* OPTIMISE_SCROLL */
 
     int default_attr, curr_attr, save_attr;
+    truecolour curr_truecolour, save_truecolour;
     termchar basic_erase_char, erase_char;
 
     bufchain inbuf;		       /* terminal input buffer */
@@ -138,6 +140,7 @@ struct terminal_tag {
     /* ESC 7 saved state for the alternate screen */
     pos alt_savecurs;
     int alt_save_attr;
+    truecolour alt_save_truecolour;
     int alt_save_cset, alt_save_csattr;
     int alt_save_utf, alt_save_wnext;
     int alt_save_sco_acs;
@@ -323,6 +326,15 @@ struct terminal_tag {
     int scroll_on_disp;
     int scroll_on_key;
     int xterm_256_colour;
+    int true_colour;
+
+    wchar_t *last_selected_text;
+    int *last_selected_attr;
+    truecolour *last_selected_tc;
+    size_t last_selected_len;
+    int mouse_select_clipboards[N_CLIPBOARDS];
+    int n_mouse_select_clipboards;
+    int mouse_paste_clipboard;
 };
 
 #define in_utf(term) ((term)->utf || (term)->ucsdata->line_codepage==CP_UTF8)

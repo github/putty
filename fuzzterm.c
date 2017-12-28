@@ -45,7 +45,7 @@ int from_backend(void *frontend, int is_stderr, const char *data, int len)
 
 void request_resize(void *frontend, int x, int y) { }
 void do_text(Context ctx, int x, int y, wchar_t * text, int len,
-	     unsigned long attr, int lattr)
+	     unsigned long attr, int lattr, truecolour tc)
 {
     int i;
 
@@ -56,7 +56,7 @@ void do_text(Context ctx, int x, int y, wchar_t * text, int len,
     printf("\n");
 }
 void do_cursor(Context ctx, int x, int y, wchar_t * text, int len,
-	     unsigned long attr, int lattr)
+	     unsigned long attr, int lattr, truecolour tc)
 {
     int i;
 
@@ -81,13 +81,13 @@ Context get_ctx(void *frontend) {
 void free_ctx(Context ctx) { }
 void palette_set(void *frontend, int a, int b, int c, int d) { }
 void palette_reset(void *frontend) { }
-void write_clip(void *frontend, wchar_t *a, int *b, int c, int d) { }
-void get_clip(void *frontend, wchar_t **w, int *i) { }
+int palette_get(void *frontend, int n, int *r, int *g, int *b) {return FALSE;}
+void write_clip(void *frontend, int clipboard,
+                wchar_t *a, int *b, truecolour *c, int d, int e) { }
 void set_raw_mouse_mode(void *frontend, int m) { }
-void request_paste(void *frontend) { }
+void frontend_request_paste(void *frontend, int clipboard) { }
 void do_beep(void *frontend, int a) { }
 void sys_cursor(void *frontend, int x, int y) { }
-void fatalbox(const char *fmt, ...) { exit(0); }
 void modalfatalbox(const char *fmt, ...) { exit(0); }
 void nonfatal(const char *fmt, ...) { }
 

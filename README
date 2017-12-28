@@ -1,4 +1,4 @@
-This is the README for the source archive of PuTTY, a free Win32
+This is the README for the source archive of PuTTY, a free Windows
 and Unix Telnet and SSH client.
 
 If you want to rebuild PuTTY from source, we provide a variety of
@@ -33,10 +33,6 @@ For building on Windows:
    corresponding .dsp file in Visual Studio. For example,
    MSVC/putty/putty.dsp builds PuTTY itself, MSVC/plink/plink.dsp
    builds Plink, and so on.
-
- - windows/Makefile.bor is for the Borland C compiler. Type `make -f
-   Makefile.bor' while in the `windows' subdirectory to build all
-   the PuTTY binaries.
 
  - windows/Makefile.mgw is for MinGW / Cygwin installations. Type
    `make -f Makefile.mgw' while in the `windows' subdirectory to
@@ -127,11 +123,11 @@ Documentation (in various formats including Windows Help and Unix
 `man' pages) is built from the Halibut (`.but') files in the `doc'
 subdirectory using `doc/Makefile'. If you aren't using one of our
 source snapshots, you'll need to do this yourself. Halibut can be
-found at <http://www.chiark.greenend.org.uk/~sgtatham/halibut/>.
+found at <https://www.chiark.greenend.org.uk/~sgtatham/halibut/>.
 
 The PuTTY home web site is
 
-    http://www.chiark.greenend.org.uk/~sgtatham/putty/
+    https://www.chiark.greenend.org.uk/~sgtatham/putty/
 
 If you want to send bug reports or feature requests, please read the
 Feedback section of the web site before doing so. Sending one-line

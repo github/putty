@@ -18,25 +18,21 @@ Backend *select_backend(Conf *conf)
     return &pty_backend;
 }
 
-int cfgbox(Conf *conf)
+void initial_config_box(Conf *conf, post_dialog_fn_t after, void *afterctx)
 {
     /*
-     * This is a no-op in pterm, except that we'll ensure the
-     * protocol is set to -1 to inhibit the useless Connection
-     * panel in the config box.
+     * This is a no-op in pterm, except that we'll ensure the protocol
+     * is set to -1 to inhibit the useless Connection panel in the
+     * config box. So we do that and then just immediately call the
+     * post-dialog function with a positive result.
      */
     conf_set_int(conf, CONF_protocol, -1);
-    return 1;
+    after(afterctx, 1);
 }
 
 void cleanup_exit(int code)
 {
     exit(code);
-}
-
-int process_nonoption_arg(const char *arg, Conf *conf, int *allow_launch)
-{
-    return 0;                          /* pterm doesn't have any. */
 }
 
 char *make_default_wintitle(char *hostname)

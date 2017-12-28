@@ -92,7 +92,10 @@ struct dlgparam {
     int nselparams;
     struct selparam *selparams;
 #endif
+    struct controlbox *ctrlbox;
     int retval;
+    post_dialog_fn_t after;
+    void *afterctx;
 };
 #define FLAG_UPDATING_COMBO_LIST 1
 #define FLAG_UPDATING_LISTBOX    2
@@ -142,7 +145,10 @@ static void colourchoose_response(GtkDialog *dialog,
 static void coloursel_ok(GtkButton *button, gpointer data);
 static void coloursel_cancel(GtkButton *button, gpointer data);
 #endif
+#if !GTK_CHECK_VERSION(3,0,0)
 static void window_destroy(GtkWidget *widget, gpointer data);
+#endif
+static void dlgparam_destroy(GtkWidget *widget, gpointer data);
 int get_listitemheight(GtkWidget *widget);
 
 static int uctrl_cmp_byctrl(void *av, void *bv)
@@ -1078,52 +1084,17 @@ static void set_transient_window_pos(GtkWidget *parent, GtkWidget *child)
 #endif
 }
 
+void trivial_post_dialog_fn(void *vctx, int result)
+{
+}
+
 void dlg_error_msg(void *dlg, const char *msg)
 {
     struct dlgparam *dp = (struct dlgparam *)dlg;
-    GtkWidget *window;
-
-#if GTK_CHECK_VERSION(3,0,0)
-    window = gtk_message_dialog_new(GTK_WINDOW(dp->window),
-                                    (GTK_DIALOG_MODAL |
-                                     GTK_DIALOG_DESTROY_WITH_PARENT),
-                                    GTK_MESSAGE_ERROR,
-                                    GTK_BUTTONS_CLOSE,
-                                    "%s", msg);
-    gtk_dialog_run(GTK_DIALOG(window));
-    gtk_widget_destroy(window);
-#else
-    GtkWidget *hbox, *text, *ok;
-
-    window = gtk_dialog_new();
-    text = gtk_label_new(msg);
-    align_label_left(GTK_LABEL(text));
-    hbox = gtk_hbox_new(FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(hbox), text, FALSE, FALSE, 20);
-    gtk_box_pack_start(GTK_BOX(gtk_dialog_get_content_area(GTK_DIALOG(window))),
-                       hbox, FALSE, FALSE, 20);
-    gtk_widget_show(text);
-    gtk_widget_show(hbox);
-    gtk_window_set_title(GTK_WINDOW(window), "Error");
-    gtk_label_set_line_wrap(GTK_LABEL(text), TRUE);
-    ok = gtk_button_new_with_label("OK");
-    gtk_box_pack_end(GTK_BOX(gtk_dialog_get_action_area(GTK_DIALOG(window))),
-                     ok, FALSE, FALSE, 0);
-    gtk_widget_show(ok);
-    gtk_widget_set_can_default(ok, TRUE);
-    gtk_window_set_default(GTK_WINDOW(window), ok);
-    g_signal_connect(G_OBJECT(ok), "clicked",
-                     G_CALLBACK(errmsg_button_clicked), window);
-    g_signal_connect(G_OBJECT(window), "destroy",
-                     G_CALLBACK(window_destroy), NULL);
-    gtk_window_set_modal(GTK_WINDOW(window), TRUE);
-    gtk_window_set_transient_for(GTK_WINDOW(window), GTK_WINDOW(dp->window));
-    set_transient_window_pos(dp->window, window);
-    gtk_widget_show(window);
-    gtk_main();
-#endif
-
-    post_main();
+    create_message_box(
+        dp->window, "Error", msg,
+        string_width("Some sort of text about a config-box error message"),
+        FALSE, &buttons_ok, trivial_post_dialog_fn, NULL);
 }
 
 /*
@@ -2615,10 +2586,12 @@ static void treeitem_sel(GtkItem *item, gpointer data)
 }
 #endif
 
+#if !GTK_CHECK_VERSION(3,0,0)
 static void window_destroy(GtkWidget *widget, gpointer data)
 {
     gtk_main_quit();
 }
+#endif
 
 #if !GTK_CHECK_VERSION(2,0,0)
 static int tree_grab_focus(struct dlgparam *dp)
@@ -2958,13 +2931,13 @@ void treeview_map_event(GtkWidget *tree, gpointer data)
 }
 #endif
 
-int do_config_box(const char *title, Conf *conf, int midsession,
-		  int protcfginfo)
+GtkWidget *create_config_box(const char *title, Conf *conf,
+                             int midsession, int protcfginfo,
+                             post_dialog_fn_t after, void *afterctx)
 {
     GtkWidget *window, *hbox, *vbox, *cols, *label,
 	*tree, *treescroll, *panels, *panelvbox;
     int index, level, protocol;
-    struct controlbox *ctrlbox;
     char *path;
 #if GTK_CHECK_VERSION(2,0,0)
     GtkTreeStore *treestore;
@@ -2976,13 +2949,17 @@ int do_config_box(const char *title, Conf *conf, int midsession,
     GtkTreeItem *treeitemlevels[8];
     GtkTree *treelevels[8];
 #endif
-    struct dlgparam dp;
+    struct dlgparam *dp;
     struct Shortcuts scs;
 
     struct selparam *selparams = NULL;
     int nselparams = 0, selparamsize = 0;
 
-    dlg_init(&dp);
+    dp = snew(struct dlgparam);
+    dp->after = after;
+    dp->afterctx = afterctx;
+
+    dlg_init(dp);
 
     for (index = 0; index < lenof(scs.sc); index++) {
 	scs.sc[index].action = SHORTCUT_EMPTY;
@@ -2990,11 +2967,11 @@ int do_config_box(const char *title, Conf *conf, int midsession,
 
     window = our_dialog_new();
 
-    ctrlbox = ctrl_new_box();
+    dp->ctrlbox = ctrl_new_box();
     protocol = conf_get_int(conf, CONF_protocol);
-    setup_config_box(ctrlbox, midsession, protocol, protcfginfo);
-    unix_setup_config_box(ctrlbox, midsession, protocol);
-    gtk_setup_config_box(ctrlbox, midsession, window);
+    setup_config_box(dp->ctrlbox, midsession, protocol, protcfginfo);
+    unix_setup_config_box(dp->ctrlbox, midsession, protocol);
+    gtk_setup_config_box(dp->ctrlbox, midsession, window);
 
     gtk_window_set_title(GTK_WINDOW(window), title);
     hbox = gtk_hbox_new(FALSE, 4);
@@ -3028,11 +3005,10 @@ int do_config_box(const char *title, Conf *conf, int midsession,
     tree = gtk_tree_new();
     gtk_tree_set_view_mode(GTK_TREE(tree), GTK_TREE_VIEW_ITEM);
     gtk_tree_set_selection_mode(GTK_TREE(tree), GTK_SELECTION_BROWSE);
-    g_signal_connect(G_OBJECT(tree), "focus",
-                     G_CALLBACK(tree_focus), &dp);
+    g_signal_connect(G_OBJECT(tree), "focus", G_CALLBACK(tree_focus), dp);
 #endif
     g_signal_connect(G_OBJECT(tree), "focus_in_event",
-                     G_CALLBACK(widget_focus), &dp);
+                     G_CALLBACK(widget_focus), dp);
     shortcut_add(&scs, label, 'g', SHORTCUT_TREE, tree);
     gtk_widget_show(treescroll);
     gtk_box_pack_start(GTK_BOX(vbox), treescroll, TRUE, TRUE, 0);
@@ -3045,12 +3021,12 @@ int do_config_box(const char *title, Conf *conf, int midsession,
     panelvbox = NULL;
     path = NULL;
     level = 0;
-    for (index = 0; index < ctrlbox->nctrlsets; index++) {
-	struct controlset *s = ctrlbox->ctrlsets[index];
+    for (index = 0; index < dp->ctrlbox->nctrlsets; index++) {
+	struct controlset *s = dp->ctrlbox->ctrlsets[index];
 	GtkWidget *w;
 
 	if (!*s->pathname) {
-	    w = layout_ctrls(&dp, &scs, s, GTK_WINDOW(window));
+	    w = layout_ctrls(dp, &scs, s, GTK_WINDOW(window));
 
 	    our_dialog_set_action_area(GTK_WINDOW(window), w);
 	} else {
@@ -3104,7 +3080,7 @@ int do_config_box(const char *title, Conf *conf, int midsession,
 		    selparams = sresize(selparams, selparamsize,
 					struct selparam);
 		}
-		selparams[nselparams].dp = &dp;
+		selparams[nselparams].dp = dp;
 		selparams[nselparams].panels = GTK_NOTEBOOK(panels);
 		selparams[nselparams].panel = panelvbox;
 		selparams[nselparams].shortcuts = scs;   /* structure copy */
@@ -3164,9 +3140,9 @@ int do_config_box(const char *title, Conf *conf, int midsession,
 		treelevels[j] = NULL;
 
                 g_signal_connect(G_OBJECT(treeitem), "key_press_event",
-                                 G_CALLBACK(tree_key_press), &dp);
+                                 G_CALLBACK(tree_key_press), dp);
                 g_signal_connect(G_OBJECT(treeitem), "focus_in_event",
-                                 G_CALLBACK(widget_focus), &dp);
+                                 G_CALLBACK(widget_focus), dp);
 
 		gtk_widget_show(treeitem);
 
@@ -3179,7 +3155,7 @@ int do_config_box(const char *title, Conf *conf, int midsession,
 		nselparams++;
 	    }
 
-	    w = layout_ctrls(&dp, &selparams[nselparams-1].shortcuts, s, NULL);
+	    w = layout_ctrls(dp, &selparams[nselparams-1].shortcuts, s, NULL);
 	    gtk_box_pack_start(GTK_BOX(panelvbox), w, FALSE, FALSE, 0);
             gtk_widget_show(w);
 	}
@@ -3201,8 +3177,8 @@ int do_config_box(const char *title, Conf *conf, int midsession,
      * enough to have all branches expanded without further resizing.
      */
 
-    dp.nselparams = nselparams;
-    dp.selparams = selparams;
+    dp->nselparams = nselparams;
+    dp->selparams = selparams;
 
 #if !GTK_CHECK_VERSION(3,0,0)
     {
@@ -3211,7 +3187,7 @@ int do_config_box(const char *title, Conf *conf, int midsession,
          */
 	GtkRequisition req;
 	gtk_widget_size_request(tree, &req);
-        initial_treeview_collapse(&dp, tree);
+        initial_treeview_collapse(dp, tree);
 	gtk_widget_set_size_request(tree, req.width, -1);
     }
 #else
@@ -3220,7 +3196,7 @@ int do_config_box(const char *title, Conf *conf, int midsession,
      * mapped, because the size computation won't have been done yet.
      */
     g_signal_connect(G_OBJECT(tree), "map",
-                     G_CALLBACK(treeview_map_event), &dp);
+                     G_CALLBACK(treeview_map_event), dp);
 #endif /* GTK 2 vs 3 */
 #endif /* GTK 2+ vs 1 */
 
@@ -3228,26 +3204,26 @@ int do_config_box(const char *title, Conf *conf, int midsession,
     g_signal_connect(G_OBJECT(treeselection), "changed",
 		     G_CALLBACK(treeselection_changed), selparams);
 #else
-    dp.ntreeitems = nselparams;
-    dp.treeitems = snewn(dp.ntreeitems, GtkWidget *);
+    dp->ntreeitems = nselparams;
+    dp->treeitems = snewn(dp->ntreeitems, GtkWidget *);
     for (index = 0; index < nselparams; index++) {
         g_signal_connect(G_OBJECT(selparams[index].treeitem), "select",
                          G_CALLBACK(treeitem_sel),
                          &selparams[index]);
-        dp.treeitems[index] = selparams[index].treeitem;
+        dp->treeitems[index] = selparams[index].treeitem;
     }
 #endif
 
-    dp.data = conf;
-    dlg_refresh(NULL, &dp);
+    dp->data = conf;
+    dlg_refresh(NULL, dp);
 
-    dp.shortcuts = &selparams[0].shortcuts;
+    dp->shortcuts = &selparams[0].shortcuts;
 #if !GTK_CHECK_VERSION(2,0,0)
-    dp.currtreeitem = dp.treeitems[0];
+    dp->currtreeitem = dp->treeitems[0];
 #endif
-    dp.lastfocus = NULL;
-    dp.retval = 0;
-    dp.window = window;
+    dp->lastfocus = NULL;
+    dp->retval = -1;
+    dp->window = window;
 
     {
 	/* in gtkwin.c */
@@ -3274,8 +3250,8 @@ int do_config_box(const char *title, Conf *conf, int midsession,
     /*
      * Set focus into the first available control.
      */
-    for (index = 0; index < ctrlbox->nctrlsets; index++) {
-	struct controlset *s = ctrlbox->ctrlsets[index];
+    for (index = 0; index < dp->ctrlbox->nctrlsets; index++) {
+	struct controlset *s = dp->ctrlbox->ctrlsets[index];
         int done = 0;
         int j;
 
@@ -3284,8 +3260,8 @@ int do_config_box(const char *title, Conf *conf, int midsession,
                 if (s->ctrls[j]->generic.type != CTRL_TABDELAY &&
                     s->ctrls[j]->generic.type != CTRL_COLUMNS &&
                     s->ctrls[j]->generic.type != CTRL_TEXT) {
-                    dlg_set_focus(s->ctrls[j], &dp);
-                    dp.lastfocus = s->ctrls[j];
+                    dlg_set_focus(s->ctrls[j], dp);
+                    dp->lastfocus = s->ctrls[j];
                     done = 1;
                     break;
                 }
@@ -3295,18 +3271,29 @@ int do_config_box(const char *title, Conf *conf, int midsession,
     }
 
     g_signal_connect(G_OBJECT(window), "destroy",
-                     G_CALLBACK(window_destroy), NULL);
+                     G_CALLBACK(dlgparam_destroy), dp);
     g_signal_connect(G_OBJECT(window), "key_press_event",
-                     G_CALLBACK(win_key_press), &dp);
+                     G_CALLBACK(win_key_press), dp);
 
-    gtk_main();
-    post_main();
+    return window;
+}
 
-    dlg_cleanup(&dp);
-    sfree(selparams);
-    ctrl_free_box(ctrlbox);
-
-    return dp.retval;
+static void dlgparam_destroy(GtkWidget *widget, gpointer data)
+{
+    struct dlgparam *dp = (struct dlgparam *)data;
+    dp->after(dp->afterctx, dp->retval);
+    dlg_cleanup(dp);
+    ctrl_free_box(dp->ctrlbox);
+#if GTK_CHECK_VERSION(2,0,0)
+    if (dp->selparams) {
+        int i;
+        for (i = 0; i < dp->nselparams; i++)
+            if (dp->selparams[i].treepath)
+                gtk_tree_path_free(dp->selparams[i].treepath);
+        sfree(dp->selparams);
+    }
+#endif
+    sfree(dp);
 }
 
 static void messagebox_handler(union control *ctrl, void *dlg,
@@ -3315,66 +3302,73 @@ static void messagebox_handler(union control *ctrl, void *dlg,
     if (event == EVENT_ACTION)
 	dlg_end(dlg, ctrl->generic.context.i);
 }
-int messagebox(GtkWidget *parentwin, const char *title, const char *msg,
-               int minwid, int selectable, ...)
+
+const struct message_box_button button_array_yn[] = {
+    {"Yes", 'y', +1, 1},
+    {"No", 'n', -1, 0},
+};
+const struct message_box_buttons buttons_yn = {
+    button_array_yn, lenof(button_array_yn),
+};
+const struct message_box_button button_array_ok[] = {
+    {"OK", 'o', 1, 1},
+};
+const struct message_box_buttons buttons_ok = {
+    button_array_ok, lenof(button_array_ok),
+};
+
+GtkWidget *create_message_box(
+    GtkWidget *parentwin, const char *title, const char *msg, int minwid,
+    int selectable, const struct message_box_buttons *buttons,
+    post_dialog_fn_t after, void *afterctx)
 {
     GtkWidget *window, *w0, *w1;
-    struct controlbox *ctrlbox;
     struct controlset *s0, *s1;
     union control *c, *textctrl;
-    struct dlgparam dp;
+    struct dlgparam *dp;
     struct Shortcuts scs;
-    int index, ncols, min_type;
-    va_list ap;
+    int i, index, ncols, min_type;
 
-    dlg_init(&dp);
+    dp = snew(struct dlgparam);
+    dp->after = after;
+    dp->afterctx = afterctx;
+
+    dlg_init(dp);
 
     for (index = 0; index < lenof(scs.sc); index++) {
 	scs.sc[index].action = SHORTCUT_EMPTY;
     }
 
-    ctrlbox = ctrl_new_box();
+    dp->ctrlbox = ctrl_new_box();
 
     /*
-     * Preliminary pass over the va_list, to count up the number of
-     * buttons and find out what kinds there are.
+     * Count up the number of buttons and find out what kinds there
+     * are.
      */
     ncols = 0;
-    va_start(ap, selectable);
     min_type = +1;
-    while (va_arg(ap, char *) != NULL) {
-        int type;
-
-	(void) va_arg(ap, int);	       /* shortcut */
-	type = va_arg(ap, int);	       /* normal/default/cancel */
-	(void) va_arg(ap, int);	       /* end value */
-
+    for (i = 0; i < buttons->nbuttons; i++) {
+        const struct message_box_button *button = &buttons->buttons[i];
 	ncols++;
-        if (min_type > type)
-            min_type = type;
+        if (min_type > button->type)
+            min_type = button->type;
+        assert(button->value >= 0);    /* <0 means no return value available */
     }
-    va_end(ap);
 
-    s0 = ctrl_getset(ctrlbox, "", "", "");
+    s0 = ctrl_getset(dp->ctrlbox, "", "", "");
     c = ctrl_columns(s0, 2, 50, 50);
     c->columns.ncols = s0->ncolumns = ncols;
     c->columns.percentages = sresize(c->columns.percentages, ncols, int);
     for (index = 0; index < ncols; index++)
 	c->columns.percentages[index] = (index+1)*100/ncols - index*100/ncols;
-    va_start(ap, selectable);
     index = 0;
-    while (1) {
-	char *title = va_arg(ap, char *);
-	int shortcut, type, value;
-	if (title == NULL)
-	    break;
-	shortcut = va_arg(ap, int);
-	type = va_arg(ap, int);
-	value = va_arg(ap, int);
-	c = ctrl_pushbutton(s0, title, shortcut, HELPCTX(no_help),
-			    messagebox_handler, I(value));
+    for (i = 0; i < buttons->nbuttons; i++) {
+        const struct message_box_button *button = &buttons->buttons[i];
+	c = ctrl_pushbutton(s0, button->title, button->shortcut,
+                            HELPCTX(no_help), messagebox_handler,
+                            I(button->value));
 	c->generic.column = index++;
-	if (type > 0)
+	if (button->type > 0)
 	    c->button.isdefault = TRUE;
 
         /* We always arrange that _some_ button is labelled as
@@ -3386,33 +3380,32 @@ int messagebox(GtkWidget *parentwin, const char *title, const char *msg,
          * no will be picked, and if there's only one option (a box
          * that really is just showing a _message_ and not even asking
          * a question) then that will be picked. */
-	if (type == min_type)
+	if (button->type == min_type)
 	    c->button.iscancel = TRUE;
     }
-    va_end(ap);
 
-    s1 = ctrl_getset(ctrlbox, "x", "", "");
+    s1 = ctrl_getset(dp->ctrlbox, "x", "", "");
     textctrl = ctrl_text(s1, msg, HELPCTX(no_help));
 
     window = our_dialog_new();
     gtk_window_set_title(GTK_WINDOW(window), title);
-    w0 = layout_ctrls(&dp, &scs, s0, GTK_WINDOW(window));
+    w0 = layout_ctrls(dp, &scs, s0, GTK_WINDOW(window));
     our_dialog_set_action_area(GTK_WINDOW(window), w0);
     gtk_widget_show(w0);
-    w1 = layout_ctrls(&dp, &scs, s1, GTK_WINDOW(window));
+    w1 = layout_ctrls(dp, &scs, s1, GTK_WINDOW(window));
     gtk_container_set_border_width(GTK_CONTAINER(w1), 10);
     gtk_widget_set_size_request(w1, minwid+20, -1);
     our_dialog_add_to_content_area(GTK_WINDOW(window), w1, TRUE, TRUE, 0);
     gtk_widget_show(w1);
 
-    dp.shortcuts = &scs;
-    dp.lastfocus = NULL;
-    dp.retval = 0;
-    dp.window = window;
+    dp->shortcuts = &scs;
+    dp->lastfocus = NULL;
+    dp->retval = 0;
+    dp->window = window;
 
     if (selectable) {
 #if GTK_CHECK_VERSION(2,0,0)
-        struct uctrl *uc = dlg_find_byctrl(&dp, textctrl);
+        struct uctrl *uc = dlg_find_byctrl(dp, textctrl);
         gtk_label_set_selectable(GTK_LABEL(uc->text), TRUE);
 
         /*
@@ -3430,7 +3423,6 @@ int messagebox(GtkWidget *parentwin, const char *title, const char *msg,
 #endif
     }
 
-    gtk_window_set_modal(GTK_WINDOW(window), TRUE);
     if (parentwin) {
         set_transient_window_pos(parentwin, window);
 	gtk_window_set_transient_for(GTK_WINDOW(window),
@@ -3441,32 +3433,62 @@ int messagebox(GtkWidget *parentwin, const char *title, const char *msg,
     gtk_widget_show(window);
     gtk_window_set_focus(GTK_WINDOW(window), NULL);
 
+    dp->selparams = NULL;
+
     g_signal_connect(G_OBJECT(window), "destroy",
-                     G_CALLBACK(window_destroy), NULL);
+                     G_CALLBACK(dlgparam_destroy), dp);
     g_signal_connect(G_OBJECT(window), "key_press_event",
-                     G_CALLBACK(win_key_press), &dp);
+                     G_CALLBACK(win_key_press), dp);
 
-    gtk_main();
-    post_main();
-
-    dlg_cleanup(&dp);
-    ctrl_free_box(ctrlbox);
-
-    return dp.retval;
+    return window;
 }
 
-int reallyclose(void *frontend)
+struct verify_ssh_host_key_result_ctx {
+    char *host;
+    int port;
+    char *keytype;
+    char *keystr;
+    void (*callback)(void *callback_ctx, int result);
+    void *callback_ctx;
+    void *frontend;
+};
+
+static void verify_ssh_host_key_result_callback(void *vctx, int result)
 {
-    char *title = dupcat(appname, " Exit Confirmation", NULL);
-    int ret = messagebox(GTK_WIDGET(get_window(frontend)),
-			 title, "Are you sure you want to close this session?",
-			 string_width("Most of the width of the above text"),
-                         FALSE,
-			 "Yes", 'y', +1, 1,
-			 "No", 'n', -1, 0,
-			 NULL);
-    sfree(title);
-    return ret;
+    struct verify_ssh_host_key_result_ctx *ctx =
+        (struct verify_ssh_host_key_result_ctx *)vctx;
+
+    if (result >= 0) {
+        int logical_result;
+
+        /*
+         * Convert the dialog-box return value (one of three
+         * possibilities) into the return value we pass back to the SSH
+         * code (one of only two possibilities, because the SSH code
+         * doesn't care whether we saved the host key or not).
+         */
+        if (result == 2) {
+            store_host_key(ctx->host, ctx->port, ctx->keytype, ctx->keystr);
+            logical_result = 1;      /* continue with connection */
+        } else if (result == 1) {
+            logical_result = 1;      /* continue with connection */
+        } else {
+            logical_result = 0;      /* do not continue with connection */
+        }
+
+        ctx->callback(ctx->callback_ctx, logical_result);
+    }
+
+    /*
+     * Clean up this context structure, whether or not a result was
+     * ever actually delivered from the dialog box.
+     */
+    unregister_dialog(ctx->frontend, DIALOG_SLOT_NETWORK_PROMPT);
+
+    sfree(ctx->host);
+    sfree(ctx->keytype);
+    sfree(ctx->keystr);
+    sfree(ctx);
 }
 
 int verify_ssh_host_key(void *frontend, char *host, int port,
@@ -3499,8 +3521,19 @@ int verify_ssh_host_key(void *frontend, char *host, int port,
 	"If you want to abandon the connection completely, press "
 	"\"Cancel\" to cancel. Pressing \"Cancel\" is the ONLY guaranteed "
 	"safe choice.";
+    static const struct message_box_button button_array_hostkey[] = {
+        {"Accept", 'a', 0, 2},
+        {"Connect Once", 'o', 0, 1},
+        {"Cancel", 'c', -1, 0},
+    };
+    static const struct message_box_buttons buttons_hostkey = {
+        button_array_hostkey, lenof(button_array_hostkey),
+    };
+
     char *text;
     int ret;
+    struct verify_ssh_host_key_result_ctx *result_ctx;
+    GtkWidget *mainwin, *msgbox;
 
     /*
      * Verify the key.
@@ -3512,23 +3545,47 @@ int verify_ssh_host_key(void *frontend, char *host, int port,
 
     text = dupprintf((ret == 2 ? wrongtxt : absenttxt), keytype, fingerprint);
 
-    ret = messagebox(GTK_WIDGET(get_window(frontend)),
-		     "PuTTY Security Alert", text,
-		     string_width(fingerprint),
-                     TRUE,
-		     "Accept", 'a', 0, 2,
-		     "Connect Once", 'o', 0, 1,
-		     "Cancel", 'c', -1, 0,
-		     NULL);
+    result_ctx = snew(struct verify_ssh_host_key_result_ctx);
+    result_ctx->callback = callback;
+    result_ctx->callback_ctx = ctx;
+    result_ctx->host = dupstr(host);
+    result_ctx->port = port;
+    result_ctx->keytype = dupstr(keytype);
+    result_ctx->keystr = dupstr(keystr);
+    result_ctx->frontend = frontend;
+
+    mainwin = GTK_WIDGET(get_window(frontend));
+    msgbox = create_message_box(
+        mainwin, "PuTTY Security Alert", text, string_width(fingerprint), TRUE,
+        &buttons_hostkey, verify_ssh_host_key_result_callback, result_ctx);
+    register_dialog(frontend, DIALOG_SLOT_NETWORK_PROMPT, msgbox);
 
     sfree(text);
 
-    if (ret == 2) {
-	store_host_key(host, port, keytype, keystr);
-	return 1;		       /* continue with connection */
-    } else if (ret == 1)
-	return 1;		       /* continue with connection */
-    return 0;			       /* do not continue with connection */
+    return -1;                         /* dialog still in progress */
+}
+
+struct simple_prompt_result_ctx {
+    void (*callback)(void *callback_ctx, int result);
+    void *callback_ctx;
+    void *frontend;
+    enum DialogSlot dialog_slot;
+};
+
+static void simple_prompt_result_callback(void *vctx, int result)
+{
+    struct simple_prompt_result_ctx *ctx =
+        (struct simple_prompt_result_ctx *)vctx;
+
+    if (result >= 0)
+        ctx->callback(ctx->callback_ctx, result);
+
+    /*
+     * Clean up this context structure, whether or not a result was
+     * ever actually delivered from the dialog box.
+     */
+    unregister_dialog(ctx->frontend, ctx->dialog_slot);
+    sfree(ctx);
 }
 
 /*
@@ -3542,25 +3599,29 @@ int askalg(void *frontend, const char *algtype, const char *algname,
 	"The first %s supported by the server is "
 	"%s, which is below the configured warning threshold.\n"
 	"Continue with connection?";
+
     char *text;
-    int ret;
+    struct simple_prompt_result_ctx *result_ctx;
+    GtkWidget *mainwin, *msgbox;
 
     text = dupprintf(msg, algtype, algname);
-    ret = messagebox(GTK_WIDGET(get_window(frontend)),
-		     "PuTTY Security Alert", text,
-		     string_width("Reasonably long line of text as a width"
-                                  " template"),
-                     FALSE,
-		     "Yes", 'y', 0, 1,
-		     "No", 'n', 0, 0,
-		     NULL);
+
+    result_ctx = snew(struct simple_prompt_result_ctx);
+    result_ctx->callback = callback;
+    result_ctx->callback_ctx = ctx;
+    result_ctx->frontend = frontend;
+    result_ctx->dialog_slot = DIALOG_SLOT_NETWORK_PROMPT;
+
+    mainwin = GTK_WIDGET(get_window(frontend));
+    msgbox = create_message_box(
+        mainwin, "PuTTY Security Alert", text,
+        string_width("Reasonably long line of text as a width template"),
+        FALSE, &buttons_yn, simple_prompt_result_callback, result_ctx);
+    register_dialog(frontend, result_ctx->dialog_slot, msgbox);
+
     sfree(text);
 
-    if (ret) {
-	return 1;
-    } else {
-	return 0;
-    }
+    return -1;                         /* dialog still in progress */
 }
 
 int askhk(void *frontend, const char *algname, const char *betteralgs,
@@ -3573,25 +3634,30 @@ int askhk(void *frontend, const char *algname, const char *betteralgs,
         "above the threshold, which we do not have stored:\n"
         "%s\n"
 	"Continue with connection?";
+
     char *text;
-    int ret;
+    struct simple_prompt_result_ctx *result_ctx;
+    GtkWidget *mainwin, *msgbox;
 
     text = dupprintf(msg, algname, betteralgs);
-    ret = messagebox(GTK_WIDGET(get_window(frontend)),
-		     "PuTTY Security Alert", text,
-		     string_width("is ecdsa-nistp521, which is"
-                                  " below the configured warning threshold."),
-                     FALSE,
-		     "Yes", 'y', 0, 1,
-		     "No", 'n', 0, 0,
-		     NULL);
+
+    result_ctx = snew(struct simple_prompt_result_ctx);
+    result_ctx->callback = callback;
+    result_ctx->callback_ctx = ctx;
+    result_ctx->frontend = frontend;
+    result_ctx->dialog_slot = DIALOG_SLOT_NETWORK_PROMPT;
+
+    mainwin = GTK_WIDGET(get_window(frontend));
+    msgbox = create_message_box(
+        mainwin, "PuTTY Security Alert", text,
+        string_width("is ecdsa-nistp521, which is below the configured"
+                     " warning threshold."),
+        FALSE, &buttons_yn, simple_prompt_result_callback, result_ctx);
+    register_dialog(frontend, result_ctx->dialog_slot, msgbox);
+
     sfree(text);
 
-    if (ret) {
-	return 1;
-    } else {
-	return 0;
-    }
+    return -1;                         /* dialog still in progress */
 }
 
 void old_keyfile_warning(void)
@@ -3601,30 +3667,14 @@ void old_keyfile_warning(void)
      */
 }
 
-void fatal_message_box(void *window, const char *msg)
-{
-    messagebox(window, "PuTTY Fatal Error", msg,
-               string_width("REASONABLY LONG LINE OF TEXT FOR BASIC SANITY"),
-               FALSE, "OK", 'o', 1, 1, NULL);
-}
-
 void nonfatal_message_box(void *window, const char *msg)
 {
-    messagebox(window, "PuTTY Error", msg,
-               string_width("REASONABLY LONG LINE OF TEXT FOR BASIC SANITY"),
-               FALSE, "OK", 'o', 1, 1, NULL);
-}
-
-void fatalbox(const char *p, ...)
-{
-    va_list ap;
-    char *msg;
-    va_start(ap, p);
-    msg = dupvprintf(p, ap);
-    va_end(ap);
-    fatal_message_box(NULL, msg);
-    sfree(msg);
-    cleanup_exit(1);
+    char *title = dupcat(appname, " Error", NULL);
+    create_message_box(
+        window, title, msg,
+        string_width("REASONABLY LONG LINE OF TEXT FOR BASIC SANITY"),
+        FALSE, &buttons_ok, trivial_post_dialog_fn, NULL);
+    sfree(title);
 }
 
 void nonfatal(const char *p, ...)
@@ -3661,10 +3711,10 @@ static void licence_clicked(GtkButton *button, gpointer data)
 
     title = dupcat(appname, " Licence", NULL);
     assert(aboutbox != NULL);
-    messagebox(aboutbox, title, LICENCE_TEXT("\n\n"),
-	       string_width("LONGISH LINE OF TEXT SO THE LICENCE"
-			    " BOX ISN'T EXCESSIVELY TALL AND THIN"),
-               TRUE, "OK", 'o', 1, 1, NULL);
+    create_message_box(aboutbox, title, LICENCE_TEXT("\n\n"),
+                       string_width("LONGISH LINE OF TEXT SO THE LICENCE"
+                                    " BOX ISN'T EXCESSIVELY TALL AND THIN"),
+                       TRUE, &buttons_ok, trivial_post_dialog_fn, NULL);
     sfree(title);
 }
 
@@ -3717,7 +3767,8 @@ void about_box(void *window)
     our_dialog_add_to_content_area(GTK_WINDOW(aboutbox), w, FALSE, FALSE, 0);
 #if GTK_CHECK_VERSION(2,0,0)
     /*
-     * Same precautions against initial select-all as in messagebox().
+     * Same precautions against initial select-all as in
+     * create_message_box().
      */
     gtk_widget_grab_focus(w);
     gtk_label_select_region(GTK_LABEL(w), 0, 0);
@@ -3728,12 +3779,16 @@ void about_box(void *window)
                      G_CALLBACK(about_key_press), NULL);
 
     set_transient_window_pos(GTK_WIDGET(window), aboutbox);
-    gtk_window_set_transient_for(GTK_WINDOW(aboutbox),
-				 GTK_WINDOW(window));
+    if (window)
+        gtk_window_set_transient_for(GTK_WINDOW(aboutbox),
+                                     GTK_WINDOW(window));
     gtk_container_set_focus_child(GTK_CONTAINER(aboutbox), NULL);
     gtk_widget_show(aboutbox);
     gtk_window_set_focus(GTK_WINDOW(aboutbox), NULL);
 }
+
+#define LOGEVENT_INITIAL_MAX 128
+#define LOGEVENT_CIRCULAR_MAX 128
 
 struct eventlog_stuff {
     GtkWidget *parentwin, *window;
@@ -3741,8 +3796,9 @@ struct eventlog_stuff {
     struct Shortcuts scs;
     struct dlgparam dp;
     union control *listctrl;
-    char **events;
-    int nevents, negsize;
+    char **events_initial;
+    char **events_circular;
+    int ninitial, ncircular, circular_first;
     char *seldata;
     int sellen;
     int ignore_selchange;
@@ -3774,8 +3830,11 @@ static void eventlog_list_handler(union control *ctrl, void *dlg,
 
 	dlg_update_start(ctrl, dlg);
 	dlg_listbox_clear(ctrl, dlg);
-	for (i = 0; i < es->nevents; i++) {
-	    dlg_listbox_add(ctrl, dlg, es->events[i]);
+	for (i = 0; i < es->ninitial; i++) {
+	    dlg_listbox_add(ctrl, dlg, es->events_initial[i]);
+	}
+	for (i = 0; i < es->ncircular; i++) {
+	    dlg_listbox_add(ctrl, dlg, es->events_circular[(es->circular_first + i) % LOGEVENT_CIRCULAR_MAX]);
 	}
 	dlg_update_done(ctrl, dlg);
     } else if (event == EVENT_SELCHANGE) {
@@ -3797,16 +3856,30 @@ static void eventlog_list_handler(union control *ctrl, void *dlg,
         sfree(es->seldata);
         es->seldata = NULL;
         es->sellen = 0;
-        for (i = 0; i < es->nevents; i++) {
+        for (i = 0; i < es->ninitial; i++) {
             if (dlg_listbox_issel(ctrl, dlg, i)) {
-                int extralen = strlen(es->events[i]);
+                int extralen = strlen(es->events_initial[i]);
 
                 if (es->sellen + extralen + 2 > selsize) {
                     selsize = es->sellen + extralen + 512;
                     es->seldata = sresize(es->seldata, selsize, char);
                 }
 
-                strcpy(es->seldata + es->sellen, es->events[i]);
+                strcpy(es->seldata + es->sellen, es->events_initial[i]);
+                es->sellen += extralen;
+                es->seldata[es->sellen++] = '\n';
+            }
+        }
+        for (i = 0; i < es->ncircular; i++) {
+            if (dlg_listbox_issel(ctrl, dlg, ninitial + i)) {
+                int extralen = strlen(es->events_circular[(es->circular_first + i) % LOGEVENT_CIRCULAR_MAX]);
+
+                if (es->sellen + extralen + 2 > selsize) {
+                    selsize = es->sellen + extralen + 512;
+                    es->seldata = sresize(es->seldata, selsize, char);
+                }
+
+                strcpy(es->seldata + es->sellen, es->events_circular[i]);
                 es->sellen += extralen;
                 es->seldata[es->sellen++] = '\n';
             }
@@ -3952,28 +4025,53 @@ void *eventlogstuff_new(void)
     return es;
 }
 
+#define MAXLOGMSGLEN 1000
+
 void logevent_dlg(void *estuff, const char *string)
 {
     struct eventlog_stuff *es = (struct eventlog_stuff *)estuff;
-
     char timebuf[40];
     struct tm tm;
+    char **location;
+    size_t i;
+    size_t slen = strlen(string);
+    size_t len = (slen > MAXLOGMSGLEN) ? MAXLOGMSGLEN : slen;
 
-    if (es->nevents >= es->negsize) {
-	es->negsize += 64;
-	es->events = sresize(es->events, es->negsize, char *);
+    if (es->ninitial == 0) {
+        es->events_initial = sresize(es->events_initial, LOGEVENT_INITIAL_MAX, char *);
+        for (i = 0; i < LOGEVENT_INITIAL_MAX; i++)
+            es->events_initial[i] = NULL;
+        es->events_circular = sresize(es->events_circular, LOGEVENT_CIRCULAR_MAX, char *);
+        for (i = 0; i < LOGEVENT_CIRCULAR_MAX; i++)
+            es->events_circular[i] = NULL;
     }
+
+    if (es->ninitial < LOGEVENT_INITIAL_MAX)
+        location = &es->events_initial[es->ninitial];
+    else
+        location = &es->events_circular[(es->circular_first + es->ncircular) % LOGEVENT_CIRCULAR_MAX];
 
     tm=ltime();
     strftime(timebuf, sizeof(timebuf), "%Y-%m-%d %H:%M:%S\t", &tm);
 
-    es->events[es->nevents] = snewn(strlen(timebuf) + strlen(string) + 1, char);
-    strcpy(es->events[es->nevents], timebuf);
-    strcat(es->events[es->nevents], string);
+    sfree(*location);
+    *location = snewn(strlen(timebuf) + len + 1, char);
+    strcpy(*location, timebuf);
+    strncat(*location, string, len);
     if (es->window) {
-	dlg_listbox_add(es->listctrl, &es->dp, es->events[es->nevents]);
+	dlg_listbox_add(es->listctrl, &es->dp, *location);
     }
-    es->nevents++;
+    if (es->ninitial < LOGEVENT_INITIAL_MAX) {
+        es->ninitial++;
+    } else if (es->ncircular < LOGEVENT_CIRCULAR_MAX) {
+        es->ncircular++;
+    } else if (es->ncircular == LOGEVENT_CIRCULAR_MAX) {
+        es->circular_first = (es->circular_first + 1) % LOGEVENT_CIRCULAR_MAX;
+        sfree(es->events_circular[es->circular_first]);
+        es->events_circular[es->circular_first] = snewn(sizeof(".."), char);
+        strcpy(es->events_circular[es->circular_first], "..");
+        es->events_circular[es->circular_first][sizeof("..") - 1] = '\0';
+    }
 }
 
 int askappend(void *frontend, Filename *filename,
@@ -3984,24 +4082,38 @@ int askappend(void *frontend, Filename *filename,
 	"You can overwrite it with a new session log, "
 	"append your session log to the end of it, "
 	"or disable session logging for this session.";
+    static const struct message_box_button button_array_append[] = {
+        {"Overwrite", 'o', 1, 2},
+        {"Append", 'a', 0, 1},
+        {"Disable", 'd', -1, 0},
+    };
+    static const struct message_box_buttons buttons_append = {
+        button_array_append, lenof(button_array_append),
+    };
+
     char *message;
     char *mbtitle;
-    int mbret;
+    struct simple_prompt_result_ctx *result_ctx;
+    GtkWidget *mainwin, *msgbox;
 
     message = dupprintf(msgtemplate, FILENAME_MAX, filename->path);
     mbtitle = dupprintf("%s Log to File", appname);
 
-    mbret = messagebox(get_window(frontend), mbtitle, message,
-		       string_width("LINE OF TEXT SUITABLE FOR THE"
-				    " ASKAPPEND WIDTH"),
-                       FALSE,
-		       "Overwrite", 'o', 1, 2,
-		       "Append", 'a', 0, 1,
-		       "Disable", 'd', -1, 0,
-		       NULL);
+    result_ctx = snew(struct simple_prompt_result_ctx);
+    result_ctx->callback = callback;
+    result_ctx->callback_ctx = ctx;
+    result_ctx->frontend = frontend;
+    result_ctx->dialog_slot = DIALOG_SLOT_LOGFILE_PROMPT;
+
+    mainwin = GTK_WIDGET(get_window(frontend));
+    msgbox = create_message_box(
+        mainwin, mbtitle, message,
+        string_width("LINE OF TEXT SUITABLE FOR THE ASKAPPEND WIDTH"),
+        FALSE, &buttons_append, simple_prompt_result_callback, result_ctx);
+    register_dialog(frontend, result_ctx->dialog_slot, msgbox);
 
     sfree(message);
     sfree(mbtitle);
 
-    return mbret;
+    return -1;                         /* dialog still in progress */
 }

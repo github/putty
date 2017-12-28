@@ -19,7 +19,7 @@
  * stddef.h. So here we try to make sure _some_ standard header is
  * included which defines uintptr_t. */
 #include <stddef.h>
-#if !defined _MSC_VER || _MSC_VER >= 1600
+#if !defined _MSC_VER || _MSC_VER >= 1600 || defined __clang__
 #include <stdint.h>
 #endif
 
@@ -54,6 +54,10 @@ struct FontSpec *fontspec_new(const char *name,
 
 #define PLATFORM_IS_UTF16 /* enable UTF-16 processing when exchanging
 			   * wchar_t strings with environment */
+
+#define PLATFORM_CLIPBOARDS(X)                      \
+    X(CLIP_SYSTEM, "system clipboard")              \
+    /* end of list */
 
 /*
  * Where we can, we use GetWindowLongPtr and friends because they're
@@ -242,6 +246,13 @@ void quit_help(HWND hwnd);
 GLOBAL Terminal *term;
 GLOBAL void *logctx;
 
+/*
+ * Windows-specific clipboard helper function shared with windlg.c,
+ * which takes the data string in the system code page instead of
+ * Unicode.
+ */
+void write_aclip(void *frontend, int clipboard, char *, int, int);
+
 #define WM_NETEVENT  (WM_APP + 5)
 
 /*
@@ -284,7 +295,7 @@ GLOBAL void *logctx;
 /*
  * Exports from winnet.c.
  */
-extern int select_result(WPARAM, LPARAM);
+extern void select_result(WPARAM, LPARAM);
 
 /*
  * winnet.c dynamically loads WinSock 2 or WinSock 1 depending on
@@ -329,6 +340,7 @@ struct ctlpos {
     int boxystart, boxid;
     char *boxtext;
 };
+void init_common_controls(void);       /* also does some DLL-loading */
 
 /*
  * Exports from winutils.c.
@@ -532,8 +544,9 @@ GLOBAL int restricted_acl;
 #ifndef LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR
 #define LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR 0x00000100
 #endif
-#if _MSC_VER < 1400
+#ifndef DLL_DIRECTORY_COOKIE
 typedef PVOID DLL_DIRECTORY_COOKIE;
+DECLSPEC_IMPORT DLL_DIRECTORY_COOKIE WINAPI AddDllDirectory (PCWSTR NewDirectory);
 #endif
 
 /*
@@ -620,5 +633,16 @@ int remove_from_jumplist_registry(const char *item);
  * sequence of NUL-terminated strings in memory, terminated with an
  * empty one. */
 char *get_jumplist_registry_entries(void);
+
+/*
+ * Windows clipboard-UI wording.
+ */
+#define CLIPNAME_IMPLICIT "Last selected text"
+#define CLIPNAME_EXPLICIT "System clipboard"
+#define CLIPNAME_EXPLICIT_OBJECT "system clipboard"
+/* These defaults are the ones PuTTY has historically had */
+#define CLIPUI_DEFAULT_AUTOCOPY TRUE
+#define CLIPUI_DEFAULT_MOUSE CLIPUI_EXPLICIT
+#define CLIPUI_DEFAULT_INS CLIPUI_EXPLICIT
 
 #endif

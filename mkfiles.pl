@@ -268,7 +268,7 @@ sub mfval($) {
     # Returns true if the argument is a known makefile type. Otherwise,
     # prints a warning and returns false;
     if (grep { $type eq $_ }
-	("vc","vcproj","cygwin","borland","lcc","devcppproj","gtk","unix",
+	("vc","vcproj","cygwin","lcc","devcppproj","gtk","unix",
          "am","osx","vstudio10","vstudio12","clangcl")) {
         return 1;
     }
@@ -364,7 +364,7 @@ sub splitline {
   $len = (defined $width ? $width : 76);
   $splitchar = (defined $splitchar ? $splitchar : '\\');
   while (length $line > $len) {
-    $line =~ /^(.{0,$len})\s(.*)$/ or $line =~ /^(.{$len,}?\s(.*)$/;
+    $line =~ /^(.{0,$len})\s(.*)$/ or $line =~ /^(.{$len,})?\s(.*)$/;
     $result .= $1;
     $result .= " ${splitchar}\n\t\t" if $2 ne '';
     $line = $2;
@@ -492,6 +492,31 @@ if (defined $makefiles{'clangcl'}) {
     #       paths in $LIB) it's reasonable to have the choice of
     #       compilation target driven by another environment variable
     #       set in parallel with that one.
+    #  - for older versions of the VS libraries you may also have to
+    #    set EXTRA_console and/or EXTRA_windows to the name of an
+    #    object file manually extracted from one of those libraries.
+    #     * This is because old VS seems to manage its startup code by
+    #       having libcmt.lib contain lots of *crt0.obj objects, one
+    #       for each possible user entry point (main, WinMain and the
+    #       wide-char versions of both), of which the linker arranges
+    #       to include the right one by special-case code. But lld
+    #       only seems to mimic half of that code - it does include
+    #       the right crt0 object, but it doesn't also deliberately
+    #       _avoid_ including the _wrong_ ones, and since all those
+    #       objects define a common set of global symbols for other
+    #       parts of the library to use, lld may well select an
+    #       arbitrary one of them the first time it sees a reference
+    #       to one of those global symbols, and then later also select
+    #       the _right_ one for the application's entry point, causing
+    #       a multiple-definitions crash.
+    #     * So the workaround is to explicitly include the right
+    #       *crt0.obj file on the linker command line before lld even
+    #       begins searching libraries. Hence, for a console
+    #       application, you might extract crt0.obj from the library
+    #       in question and set EXTRA_console=crt0.obj, and for a GUI
+    #       application, do the same with wincrt0.obj. Then this
+    #       makefile will include the right one of those objects
+    #       alongside the matching /subsystem linker option.
 
     open OUT, ">$makefiles{'clangcl'}"; select OUT;
     print
@@ -519,7 +544,8 @@ if (defined $makefiles{'clangcl'}) {
     &splitline("CFLAGS = /nologo /W3 /O1 " .
                (join " ", map {"-I$dirpfx$_"} @srcdirs) .
                " /D_WINDOWS /D_WIN32_WINDOWS=0x500 /DWINVER=0x500 ".
-               "/D_CRT_SECURE_NO_WARNINGS")."\n".
+               "/D_CRT_SECURE_NO_WARNINGS /D_WINSOCK_DEPRECATED_NO_WARNINGS").
+               "\n".
     "LFLAGS = /incremental:no /dynamicbase /nxcompat\n".
     &splitline("RCFLAGS = ".(join " ", map {"-I$dirpfx$_"} @srcdirs).
                " -DWIN32 -D_WIN32 -DWINVER=0x0400")."\n".
@@ -531,21 +557,22 @@ if (defined $makefiles{'clangcl'}) {
     print "\n\n";
     foreach $p (&prognames("G:C")) {
 	($prog, $type) = split ",", $p;
-	$objstr = &objects($p, "\$(BUILDDIR)X.obj", "\$(BUILDDIR)X.res.o", undef);
+	$objstr = &objects($p, "\$(BUILDDIR)X.obj", "\$(BUILDDIR)X.res", undef);
 	print &splitline("\$(BUILDDIR)$prog.exe: " . $objstr), "\n";
 
-	$objstr = &objects($p, "\$(BUILDDIR)X.obj", "\$(BUILDDIR)X.res.o", "X.lib");
+	$objstr = &objects($p, "\$(BUILDDIR)X.obj", "\$(BUILDDIR)X.res", "X.lib");
 	$subsys = ($type eq "G") ? "windows" : "console";
 	print &splitline("\t\$(LD) \$(LFLAGS) \$(XLFLAGS) ".
                          "/out:\$(BUILDDIR)$prog.exe ".
                          "/lldmap:\$(BUILDDIR)$prog.map ".
-                         "/subsystem:$subsys\$(SUBSYSVER) $objstr")."\n\n";
+                         "/subsystem:$subsys\$(SUBSYSVER) ".
+                         "\$(EXTRA_$subsys) $objstr")."\n\n";
     }
-    foreach $d (&deps("\$(BUILDDIR)X.obj", "\$(BUILDDIR)X.res.o", $dirpfx, "/", "vc")) {
+    foreach $d (&deps("\$(BUILDDIR)X.obj", "\$(BUILDDIR)X.res", $dirpfx, "/", "vc")) {
         $extradeps = $forceobj{$d->{obj_orig}} ? ["*.c","*.h","*.rc"] : [];
         print &splitline(sprintf("%s: %s", $d->{obj},
                                  join " ", @$extradeps, @{$d->{deps}})), "\n";
-        if ($d->{obj} =~ /\.res\.o$/) {
+        if ($d->{obj} =~ /\.res$/) {
             print "\t\$(RC) \$(RCFLAGS) ".$d->{deps}->[0]." -o ".$d->{obj}."\n\n";
 	} else {
             print "\t\$(CC) /Fo\$(BUILDDIR) \$(COMPAT) \$(CFLAGS) \$(XFLAGS) /c \$<\n\n";
@@ -555,7 +582,7 @@ if (defined $makefiles{'clangcl'}) {
     print &def($makefile_extra{'clangcl'}->{'end'});
     print "\nclean:\n".
         &splitline("\trm -f \$(BUILDDIR)*.obj \$(BUILDDIR)*.exe ".
-                   "\$(BUILDDIR)*.res.o \$(BUILDDIR)*.map ".
+                   "\$(BUILDDIR)*.res \$(BUILDDIR)*.map ".
                    "\$(BUILDDIR)*.exe.manifest")."\n";
     select STDOUT; close OUT;
 }
@@ -631,121 +658,6 @@ if (defined $makefiles{'cygwin'}) {
     "FORCE:\n";
     select STDOUT; close OUT;
 
-}
-
-##-- Borland makefile
-if (defined $makefiles{'borland'}) {
-    $dirpfx = &dirpfx($makefiles{'borland'}, "\\");
-
-    %stdlibs = (  # Borland provides many Win32 API libraries intrinsically
-      "advapi32" => 1,
-      "comctl32" => 1,
-      "comdlg32" => 1,
-      "gdi32" => 1,
-      "imm32" => 1,
-      "shell32" => 1,
-      "user32" => 1,
-      "winmm" => 1,
-      "winspool" => 1,
-      "wsock32" => 1,
-    );
-    open OUT, ">$makefiles{'borland'}"; select OUT;
-    print
-    "# Makefile for $project_name under Borland C.\n".
-    "#\n# This file was created by `mkfiles.pl' from the `Recipe' file.\n".
-    "# DO NOT EDIT THIS FILE DIRECTLY; edit Recipe or mkfiles.pl instead.\n";
-    # bcc32 command line option is -D not /D
-    ($_ = $help) =~ s/([=" ])\/D/$1-D/gs;
-    print $_;
-    print
-    "\n".
-    "# If you rename this file to `Makefile', you should change this line,\n".
-    "# so that the .rsp files still depend on the correct makefile.\n".
-    "MAKEFILE = Makefile.bor\n".
-    "\n".
-    "# C compilation flags\n".
-    "CFLAGS = -D_WINDOWS -DWINVER=0x0500\n".
-    "# Resource compilation flags\n".
-    "RCFLAGS = -DNO_WINRESRC_H -DWIN32 -D_WIN32 -DWINVER=0x0401\n".
-    "\n".
-    "# Get include directory for resource compiler\n".
-    "!if !\$d(BCB)\n".
-    "BCB = \$(MAKEDIR)\\..\n".
-    "!endif\n".
-    "\n".
-    &def($makefile_extra{'borland'}->{'vars'}) .
-    "\n".
-    ".c.obj:\n".
-    &splitline("\tbcc32 -w-aus -w-ccc -w-par -w-pia \$(COMPAT)".
-	       " \$(CFLAGS) \$(XFLAGS) ".
-	       (join " ", map {"-I$dirpfx$_"} @srcdirs) .
-	       " /c \$*.c",69)."\n".
-    ".rc.res:\n".
-    &splitline("\tbrcc32 \$(RCFL) -i \$(BCB)\\include -r".
-      " \$(RCFLAGS) \$*.rc",69)."\n".
-    "\n";
-    print &splitline("all:" . join "", map { " $_.exe" } &progrealnames("G:C"));
-    print "\n\n";
-    foreach $p (&prognames("G:C")) {
-      ($prog, $type) = split ",", $p;
-      $objstr =  &objects($p, "X.obj", "X.res", undef);
-      print &splitline("$prog.exe: " . $objstr . " $prog.rsp"), "\n";
-      my $ap = ($type eq "G") ? "-aa" : "-ap";
-      print "\tilink32 $ap -Gn -L\$(BCB)\\lib \@$prog.rsp\n\n";
-    }
-    foreach $p (&prognames("G:C")) {
-      ($prog, $type) = split ",", $p;
-      print $prog, ".rsp: \$(MAKEFILE)\n";
-      $objstr = &objects($p, "X.obj", undef, undef);
-      @objlist = split " ", $objstr;
-      @objlines = ("");
-      foreach $i (@objlist) {
-        if (length($objlines[$#objlines] . " $i") > 50) {
-          push @objlines, "";
-        }
-        $objlines[$#objlines] .= " $i";
-      }
-      $c0w = ($type eq "G") ? "c0w32" : "c0x32";
-      print "\techo $c0w + > $prog.rsp\n";
-      for ($i=0; $i<=$#objlines; $i++) {
-        $plus = ($i < $#objlines ? " +" : "");
-        print "\techo$objlines[$i]$plus >> $prog.rsp\n";
-      }
-      print "\techo $prog.exe >> $prog.rsp\n";
-      $objstr = &objects($p, "X.obj", "X.res", undef);
-      @libs = split " ", &objects($p, undef, undef, "X");
-      @libs = grep { !$stdlibs{$_} } @libs;
-      unshift @libs, "cw32", "import32";
-      $libstr = join ' ', @libs;
-      print "\techo nul,$libstr, >> $prog.rsp\n";
-      print "\techo " . &objects($p, undef, "X.res", undef) . " >> $prog.rsp\n";
-      print "\n";
-    }
-    foreach $d (&deps("X.obj", "X.res", $dirpfx, "\\", "borland")) {
-      if ($forceobj{$d->{obj_orig}}) {
-        printf("%s: FORCE\n", $d->{obj});
-      } else {
-        print &splitline(sprintf("%s: %s", $d->{obj},
-                                 join " ", @{$d->{deps}})), "\n";
-      }
-    }
-    print "\n";
-    print &def($makefile_extra{'borland'}->{'end'});
-    print "\nclean:\n".
-    "\t-del *.obj\n".
-    "\t-del *.exe\n".
-    "\t-del *.res\n".
-    "\t-del *.pch\n".
-    "\t-del *.aps\n".
-    "\t-del *.il*\n".
-    "\t-del *.pdb\n".
-    "\t-del *.rsp\n".
-    "\t-del *.tds\n".
-    "\t-del *.\$\$\$\$\$\$\n".
-    "\n".
-    "FORCE:\n".
-    "\t-rem dummy command\n";
-    select STDOUT; close OUT;
 }
 
 if (defined $makefiles{'vc'}) {
@@ -1966,7 +1878,7 @@ if (defined $makefiles{'devcppproj'}) {
       "# ** DO NOT EDIT **\r\n".
       "\r\n".
       # No difference between DEBUG and RELEASE here as in 'vcproj', because
-      # Dev-C++ does not support mutiple compilation profiles in one single project.
+      # Dev-C++ does not support multiple compilation profiles in one single project.
       # (At least I can say this for Dev-C++ 5 Beta)
       "[Project]\r\n".
       "FileName=$windows_project.dev\r\n".

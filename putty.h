@@ -104,15 +104,16 @@ typedef struct terminal_tag Terminal;
  */
 #define UCSWIDE	     0xDFFF
 
-#define ATTR_NARROW  0x800000U
-#define ATTR_WIDE    0x400000U
-#define ATTR_BOLD    0x040000U
-#define ATTR_UNDER   0x080000U
-#define ATTR_REVERSE 0x100000U
-#define ATTR_BLINK   0x200000U
-#define ATTR_FGMASK  0x0001FFU
-#define ATTR_BGMASK  0x03FE00U
-#define ATTR_COLOURS 0x03FFFFU
+#define ATTR_NARROW  0x0800000U
+#define ATTR_WIDE    0x0400000U
+#define ATTR_BOLD    0x0040000U
+#define ATTR_UNDER   0x0080000U
+#define ATTR_REVERSE 0x0100000U
+#define ATTR_BLINK   0x0200000U
+#define ATTR_FGMASK  0x00001FFU
+#define ATTR_BGMASK  0x003FE00U
+#define ATTR_COLOURS 0x003FFFFU
+#define ATTR_DIM     0x1000000U
 #define ATTR_FGSHIFT 0
 #define ATTR_BGSHIFT 9
 
@@ -593,11 +594,64 @@ void prompt_ensure_result_size(prompt_t *pr, int len);
 void free_prompts(prompts_t *p);
 
 /*
+ * Data type definitions for true-colour terminal display.
+ * 'optionalrgb' describes a single RGB colour, which overrides the
+ * other colour settings if 'enabled' is nonzero, and is ignored
+ * otherwise. 'truecolour' contains a pair of those for foreground and
+ * background.
+ */
+typedef struct optionalrgb {
+    unsigned char enabled;
+    unsigned char r, g, b;
+} optionalrgb;
+extern const optionalrgb optionalrgb_none;
+typedef struct truecolour {
+    optionalrgb fg, bg;
+} truecolour;
+#define optionalrgb_equal(r1,r2) (                              \
+        (r1).enabled==(r2).enabled &&                           \
+        (r1).r==(r2).r && (r1).g==(r2).g && (r1).b==(r2).b)
+#define truecolour_equal(c1,c2) (               \
+        optionalrgb_equal((c1).fg, (c2).fg) &&  \
+        optionalrgb_equal((c1).bg, (c2).bg))
+
+/*
+ * Enumeration of clipboards. We provide some standard ones cross-
+ * platform, and then permit each platform to extend this enumeration
+ * further by defining PLATFORM_CLIPBOARDS in its own header file.
+ *
+ * CLIP_NULL is a non-clipboard, writes to which are ignored and reads
+ * from which return no data.
+ *
+ * CLIP_LOCAL refers to a buffer within terminal.c, which
+ * unconditionally saves the last data selected in the terminal. In
+ * configurations where a system clipboard is not written
+ * automatically on selection but instead by an explicit UI action,
+ * this is where the code responding to that action can find the data
+ * to write to the clipboard in question.
+ */
+#define CROSS_PLATFORM_CLIPBOARDS(X)                    \
+    X(CLIP_NULL, "null clipboard")                      \
+    X(CLIP_LOCAL, "last text selected in terminal")     \
+    /* end of list */
+
+#define ALL_CLIPBOARDS(X)                       \
+    CROSS_PLATFORM_CLIPBOARDS(X)                \
+    PLATFORM_CLIPBOARDS(X)                      \
+    /* end of list */
+
+#define CLIP_ID(id,name) id,
+enum { ALL_CLIPBOARDS(CLIP_ID) N_CLIPBOARDS };
+#undef CLIP_ID
+
+/*
  * Exports from the front end.
  */
 void request_resize(void *frontend, int, int);
-void do_text(Context, int, int, wchar_t *, int, unsigned long, int);
-void do_cursor(Context, int, int, wchar_t *, int, unsigned long, int);
+void do_text(Context, int, int, wchar_t *, int, unsigned long, int,
+             truecolour);
+void do_cursor(Context, int, int, wchar_t *, int, unsigned long, int,
+               truecolour);
 int char_width(Context ctx, int uc);
 #ifdef OPTIMISE_SCROLL
 void do_scroll(Context, int, int, int);
@@ -609,23 +663,21 @@ Context get_ctx(void *frontend);
 void free_ctx(Context);
 void palette_set(void *frontend, int, int, int, int);
 void palette_reset(void *frontend);
-void write_aclip(void *frontend, char *, int, int);
-void write_clip(void *frontend, wchar_t *, int *, int, int);
-void get_clip(void *frontend, wchar_t **, int *);
+int palette_get(void *frontend, int n, int *r, int *g, int *b);
+void write_clip(void *frontend, int clipboard, wchar_t *, int *,
+                truecolour *, int, int);
 void optimised_move(void *frontend, int, int, int);
 void set_raw_mouse_mode(void *frontend, int);
 void connection_fatal(void *frontend, const char *, ...);
 void nonfatal(const char *, ...);
-void fatalbox(const char *, ...);
 void modalfatalbox(const char *, ...);
 #ifdef macintosh
-#pragma noreturn(fatalbox)
 #pragma noreturn(modalfatalbox)
 #endif
 void do_beep(void *frontend, int);
 void begin_session(void *frontend);
 void sys_cursor(void *frontend, int x, int y);
-void request_paste(void *frontend);
+void frontend_request_paste(void *frontend, int clipboard);
 void frontend_keypress(void *frontend);
 void frontend_echoedit_update(void *frontend, int echo, int edit);
 /* It's the backend's responsibility to invoke this at the start of a
@@ -835,6 +887,7 @@ void cleanup_exit(int);
     /* Colour options */ \
     X(INT, NONE, ansi_colour) \
     X(INT, NONE, xterm_256_colour) \
+    X(INT, NONE, true_colour) \
     X(INT, NONE, system_colour) \
     X(INT, NONE, try_palette) \
     X(INT, NONE, bold_style) \
@@ -846,6 +899,13 @@ void cleanup_exit(int);
     X(INT, NONE, rtf_paste) \
     X(INT, NONE, mouse_override) \
     X(INT, INT, wordness) \
+    X(INT, NONE, mouseautocopy) \
+    X(INT, NONE, mousepaste) \
+    X(INT, NONE, ctrlshiftins) \
+    X(INT, NONE, ctrlshiftcv) \
+    X(STR, NONE, mousepaste_custom) \
+    X(STR, NONE, ctrlshiftins_custom) \
+    X(STR, NONE, ctrlshiftcv_custom) \
     /* translations */ \
     X(INT, NONE, vtmode) \
     X(STR, NONE, line_codepage) \
@@ -1028,15 +1088,17 @@ void term_mouse(Terminal *, Mouse_Button, Mouse_Button, Mouse_Action,
 		int,int,int,int,int);
 void term_key(Terminal *, Key_Sym, wchar_t *, size_t, unsigned int,
 	      unsigned int);
-void term_deselect(Terminal *);
+void term_lost_clipboard_ownership(Terminal *, int clipboard);
 void term_update(Terminal *);
 void term_invalidate(Terminal *);
 void term_blink(Terminal *, int set_cursor);
-void term_do_paste(Terminal *);
+void term_do_paste(Terminal *, const wchar_t *, int);
 void term_nopaste(Terminal *);
 int term_ldisc(Terminal *, int option);
-void term_copyall(Terminal *);
+void term_copyall(Terminal *, const int *, int);
 void term_reconfig(Terminal *, Conf *);
+void term_request_copy(Terminal *, const int *clipboards, int n_clipboards);
+void term_request_paste(Terminal *, int clipboard);
 void term_seen_key_event(Terminal *); 
 int term_data(Terminal *, int is_stderr, const char *data, int len);
 int term_data_untrusted(Terminal *, const char *data, int len);
@@ -1150,6 +1212,11 @@ void pinger_free(Pinger);
 #include "misc.h"
 int conf_launchable(Conf *conf);
 char const *conf_dest(Conf *conf);
+
+/*
+ * Exports from sessprep.c.
+ */
+void prepare_session(Conf *conf);
 
 /*
  * Exports from sercfg.c.
@@ -1320,8 +1387,14 @@ int cmdline_process_param(const char *, char *, int, Conf *);
 void cmdline_run_saved(Conf *);
 void cmdline_cleanup(void);
 int cmdline_get_passwd_input(prompts_t *p, const unsigned char *in, int inlen);
+int cmdline_host_ok(Conf *);
 #define TOOLTYPE_FILETRANSFER 1
 #define TOOLTYPE_NONNETWORK 2
+#define TOOLTYPE_HOST_ARG 4
+#define TOOLTYPE_HOST_ARG_CAN_BE_SESSION 8
+#define TOOLTYPE_HOST_ARG_PROTOCOL_PREFIX 16
+#define TOOLTYPE_HOST_ARG_FROM_LAUNCHABLE_LOAD 32
+#define TOOLTYPE_PORT_ARG 64
 extern int cmdline_tooltype;
 
 void cmdline_error(const char *, ...);
@@ -1366,6 +1439,16 @@ enum {
     X11_NAUTHS
 };
 extern const char *const x11_authnames[];  /* declared in x11fwd.c */
+
+/*
+ * An enum for the copy-paste UI action configuration.
+ */
+enum {
+    CLIPUI_NONE,     /* UI action has no copy/paste effect */
+    CLIPUI_IMPLICIT, /* use the default clipboard implicit in mouse actions  */
+    CLIPUI_EXPLICIT, /* use the default clipboard for explicit Copy/Paste */
+    CLIPUI_CUSTOM,   /* use a named clipboard (on systems that support it) */
+};
 
 /*
  * Miscellaneous exports from the platform-specific code.
@@ -1507,6 +1590,7 @@ typedef void (*toplevel_callback_fn_t)(void *ctx);
 void queue_toplevel_callback(toplevel_callback_fn_t fn, void *ctx);
 void run_toplevel_callbacks(void);
 int toplevel_callback_pending(void);
+void delete_callbacks_for_context(void *ctx);
 
 typedef void (*toplevel_callback_notify_fn_t)(void *frontend);
 void request_callback_notifications(toplevel_callback_notify_fn_t notify,

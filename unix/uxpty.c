@@ -261,13 +261,20 @@ static void cleanup_utmp(void)
 }
 #endif
 
-#ifndef NO_PTY_PRE_INIT
 static void sigchld_handler(int signum)
 {
     if (write(pty_signal_pipe[1], "x", 1) <= 0)
 	/* not much we can do about it */;
 }
-#endif
+
+static void pty_setup_sigchld_handler(void)
+{
+    static int setup = FALSE;
+    if (!setup) {
+        putty_signal(SIGCHLD, sigchld_handler);
+        setup = TRUE;
+    }
+}
 
 #ifndef OMIT_UTMP
 static void fatal_sig_handler(int signum)
@@ -433,7 +440,7 @@ void pty_pre_init(void)
 
     /* set the child signal handler straight away; it needs to be set
      * before we ever fork. */
-    putty_signal(SIGCHLD, sigchld_handler);
+    pty_setup_sigchld_handler();
     pty->master_fd = pty->slave_fd = -1;
 #ifndef OMIT_UTMP
     pty_stamped_utmp = FALSE;
@@ -572,7 +579,7 @@ void pty_pre_init(void)
 
 }
 
-int pty_real_select_result(Pty pty, int event, int status)
+void pty_real_select_result(Pty pty, int event, int status)
 {
     char buf[4096];
     int ret;
@@ -672,13 +679,10 @@ int pty_real_select_result(Pty pty, int event, int status)
 
 	notify_remote_exit(pty->frontend);
     }
-
-    return !finished;
 }
 
-int pty_select_result(int fd, int event)
+void pty_select_result(int fd, int event)
 {
-    int ret = TRUE;
     Pty pty;
 
     if (fd == pty_signal_pipe[0]) {
@@ -696,16 +700,14 @@ int pty_select_result(int fd, int event)
 	    pty = find234(ptys_by_pid, &pid, pty_find_by_pid);
 
 	    if (pty)
-		ret = ret && pty_real_select_result(pty, -1, status);
+		pty_real_select_result(pty, -1, status);
 	} while (pid > 0);
     } else {
 	pty = find234(ptys_by_fd, &fd, pty_find_by_fd);
 
 	if (pty)
-	    ret = ret && pty_real_select_result(pty, event, 0);
+	    pty_real_select_result(pty, event, 0);
     }
-
-    return ret;
 }
 
 static void pty_uxsel_setup(Pty pty)
@@ -794,6 +796,12 @@ static const char *pty_init(void *frontend, void **backend_handle, Conf *conf,
 #ifndef NOT_X_WINDOWS		       /* for Mac OS X native compilation */
     windowid = get_windowid(pty->frontend);
 #endif
+
+    /*
+     * Set up the signal handler to catch SIGCHLD, if pty_pre_init
+     * didn't already do it.
+     */
+    pty_setup_sigchld_handler();
 
     /*
      * Fork and execute the command.
