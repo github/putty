@@ -980,8 +980,8 @@ follows:
 \cq{o} for odd, \cq{e} for even, \cq{m} for mark and \cq{s} for space.
 
 \b A single upper-case letter specifies the flow control: \cq{N} for
-none, \cq{X} for XON/XOFF, \cq{R} for RTS/CTS and \cq{D} for
-DSR/DTR.
+none, \cq{X} for XON/XOFF, \cq{R} for RTS/CTS, \cq{D} for
+DSR/DTR and \cq{U} Disables DTR/RTS (only in Windows version).
 
 For example, \cq{-sercfg 19200,8,n,1,N} denotes a baud rate of
 19200, 8 data bits, no parity, 1 stop bit and no flow control.

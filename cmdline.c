@@ -554,6 +554,9 @@ int cmdline_process_param(const char *p, char *value,
 		  case 'D':
 		    conf_set_int(conf, CONF_serflow, SER_FLOW_DSRDTR);
 		    break;
+		  case 'U':
+		    conf_set_int(conf, CONF_serflow, SER_FLOW_NONE_DTR_RTS_DIS);
+		    break;
 
 		  default:
 		    cmdline_error("Unrecognised suboption \"-sercfg %c\"",
