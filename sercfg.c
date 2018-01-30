@@ -82,6 +82,7 @@ static void serial_flow_handler(union control *ctrl, void *dlg,
 	{"XON/XOFF", SER_FLOW_XONXOFF},
 	{"RTS/CTS", SER_FLOW_RTSCTS},
 	{"DSR/DTR", SER_FLOW_DSRDTR},
+	{"Disable DTR/RTS", SER_FLOW_NONE_DTR_RTS_DIS},
     };
     int mask = ctrl->listbox.context.i;
     int i, j;

@@ -170,6 +170,11 @@ static const char *serial_configure(Serial serial, HANDLE serport, Conf *conf)
 	    dcb.fOutxDsrFlow = TRUE;
 	    str = "DSR/DTR";
 	    break;
+      case SER_FLOW_NONE_DTR_RTS_DIS:
+	    str = "Disable DTR/RTS";
+        dcb.fDtrControl = DTR_CONTROL_DISABLE;
+        dcb.fRtsControl = RTS_CONTROL_DISABLE;
+	    break;
 	}
 	msg = dupprintf("Configuring %s flow control", str);
 	logevent(serial->frontend, msg);

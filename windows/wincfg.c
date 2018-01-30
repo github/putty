@@ -387,7 +387,7 @@ void win_setup_config_box(struct controlbox *b, HWND *hwndp, int has_help,
      * Serial back end is available on Windows.
      */
     if (!midsession || (protocol == PROT_SERIAL))
-        ser_setup_config_box(b, midsession, 0x1F, 0x0F);
+        ser_setup_config_box(b, midsession, 0x1F, 0x01F);
 
     /*
      * $XAUTHORITY is not reliable on Windows, so we provide a
