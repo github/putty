@@ -7,8 +7,10 @@
 #include <errno.h>
 
 #include "putty.h"
+#include "storage.h"
+#include "misc.h"
 #include "ssh.h"
-#include "sshchan.h"
+#include "ssh/channel.h"
 #include "psocks.h"
 
 /*
@@ -93,8 +95,7 @@ static const SshChannelVtable psocks_scvt = {
 
 static void psocks_plug_log(Plug *p, PlugLogType type, SockAddr *addr,
                             int port, const char *error_msg, int error_code);
-static void psocks_plug_closing(Plug *p, const char *error_msg,
-                                int error_code, bool calling_back);
+static void psocks_plug_closing(Plug *p, PlugCloseType, const char *error_msg);
 static void psocks_plug_receive(Plug *p, int urgent,
                                 const char *data, size_t len);
 static void psocks_plug_sent(Plug *p, size_t bufsize);
@@ -120,30 +121,6 @@ static void psocks_conn_log(psocks_connection *conn, const char *fmt, ...)
     fflush(conn->ps->logging_fp);
 }
 
-static void print_c_string(FILE *fp, const char *data, size_t len)
-{
-    while (len--) {
-	char c = *data++;
-
-	if (c == '\n')
-	    fputs("\\n", fp);
-	else if (c == '\r')
-	    fputs("\\r", fp);
-	else if (c == '\t')
-	    fputs("\\t", fp);
-	else if (c == '\b')
-	    fputs("\\b", fp);
-	else if (c == '\\')
-	    fputs("\\\\", fp);
-	else if (c == '"')
-	    fputs("\\\"", fp);
-	else if (c >= 32 && c <= 126)
-	    fputc(c, fp);
-	else
-	    fprintf(fp, "\\%03o", (unsigned char)c);
-    }
-}
-
 static void psocks_conn_log_data(psocks_connection *conn, PsocksDirection dir,
                                  const void *vdata, size_t len)
 {
@@ -161,7 +138,8 @@ static void psocks_conn_log_data(psocks_connection *conn, PsocksDirection dir,
 
             fprintf(conn->ps->logging_fp, "c#%"PRIu64": %s \"", conn->index,
                     direction_names[dir]);
-            print_c_string(conn->ps->logging_fp, thisdata, thislen);
+            write_c_string_literal(conn->ps->logging_fp,
+                                   make_ptrlen(thisdata, thislen));
             fprintf(conn->ps->logging_fp, "\"\n");
         }
 
@@ -376,8 +354,8 @@ static void psocks_plug_log(Plug *plug, PlugLogType type, SockAddr *addr,
     };
 }
 
-static void psocks_plug_closing(Plug *plug, const char *error_msg,
-                                int error_code, bool calling_back)
+static void psocks_plug_closing(Plug *plug, PlugCloseType type,
+                                const char *error_msg)
 {
     psocks_connection *conn = container_of(plug, psocks_connection, plug);
     if (conn->connecting) {
@@ -484,7 +462,7 @@ void psocks_cmdline(psocks_state *ps, int argc, char **argv)
                  * subcommand, even if they look like options */
                 doing_opts = false;
 	    } else if (!strcmp(p, "--help")) {
-                printf("usage: psocks [ -d | -f");
+                printf("usage: psocks [ -d ] [ -f");
                 if (ps->platform->open_pipes)
                     printf(" | -p pipe-cmd");
                 printf(" ] [ -g ] port-number");
@@ -545,13 +523,13 @@ void psocks_start(psocks_state *ps)
  * Some stubs that are needed to link against PuTTY modules.
  */
 
-int verify_host_key(const char *hostname, int port,
-                    const char *keytype, const char *key)
+int check_stored_host_key(const char *hostname, int port,
+                          const char *keytype, const char *key)
 {
     unreachable("host keys not handled in this tool");
 }
 
-void store_host_key(const char *hostname, int port,
+void store_host_key(Seat *seat, const char *hostname, int port,
                     const char *keytype, const char *key)
 {
     unreachable("host keys not handled in this tool");

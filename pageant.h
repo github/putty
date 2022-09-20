@@ -34,7 +34,7 @@ struct PageantClientVtable {
     void (*got_response)(PageantClient *pc, PageantClientRequestId *reqid,
                          ptrlen response);
     bool (*ask_passphrase)(PageantClient *pc, PageantClientDialogId *dlgid,
-                           const char *msg);
+                           const char *key_comment);
 };
 
 static inline void pageant_client_log_v(
@@ -58,8 +58,8 @@ static inline void pageant_client_got_response(
     PageantClient *pc, PageantClientRequestId *reqid, ptrlen response)
 { pc->vt->got_response(pc, reqid, response); }
 static inline bool pageant_client_ask_passphrase(
-    PageantClient *pc, PageantClientDialogId *dlgid, const char *msg)
-{ return pc->vt->ask_passphrase(pc, dlgid, msg); }
+    PageantClient *pc, PageantClientDialogId *dlgid, const char *comment)
+{ return pc->vt->ask_passphrase(pc, dlgid, comment); }
 
 /* PageantClientRequestId is used to match up responses to the agent
  * requests they refer to. A client may allocate one of these for each
@@ -112,21 +112,17 @@ void pageant_make_keylist1(BinarySink *);
 void pageant_make_keylist2(BinarySink *);
 
 /*
- * Accessor functions for Pageant's internal key lists. Fetch the nth
- * key; count the keys; attempt to add a key (returning true on
- * success, in which case the ownership of the key structure has been
- * taken over by pageant.c); attempt to delete a key (returning true
- * on success, in which case the ownership of the key structure is
- * passed back to the client).
+ * Accessor functions for Pageant's internal key lists, used by GUI
+ * Pageant, to count the keys, to delete a key, or to re-encrypt a
+ * decrypted-on-demand key (SSH-2 only).
  */
-RSAKey *pageant_nth_ssh1_key(int i);
-ssh2_userkey *pageant_nth_ssh2_key(int i);
 int pageant_count_ssh1_keys(void);
 int pageant_count_ssh2_keys(void);
-bool pageant_add_ssh1_key(RSAKey *rkey);
-bool pageant_add_ssh2_key(ssh2_userkey *skey);
-bool pageant_delete_ssh1_key(RSAKey *rkey);
-bool pageant_delete_ssh2_key(ssh2_userkey *skey);
+bool pageant_delete_nth_ssh1_key(int i);
+bool pageant_delete_nth_ssh2_key(int i);
+bool pageant_reencrypt_nth_ssh2_key(int i);
+void pageant_delete_all(void);
+void pageant_reencrypt_all(void);
 
 /*
  * This callback must be provided by the Pageant front end code.
@@ -159,7 +155,8 @@ struct PageantListenerClient {
 struct PageantListenerClientVtable {
     void (*log)(PageantListenerClient *, const char *fmt, va_list ap);
     bool (*ask_passphrase)(PageantListenerClient *pc,
-                           PageantClientDialogId *dlgid, const char *msg);
+                           PageantClientDialogId *dlgid,
+                           const char *key_comment);
 };
 
 static inline void pageant_listener_client_log_v(
@@ -179,8 +176,9 @@ static inline PRINTF_LIKE(2, 3) void pageant_listener_client_log(
     }
 }
 static inline bool pageant_listener_client_ask_passphrase(
-    PageantListenerClient *plc, PageantClientDialogId *dlgid, const char *msg)
-{ return plc->vt->ask_passphrase(plc, dlgid, msg); }
+    PageantListenerClient *plc, PageantClientDialogId *dlgid,
+    const char *comment)
+{ return plc->vt->ask_passphrase(plc, dlgid, comment); }
 
 struct pageant_listen_state;
 struct pageant_listen_state *pageant_listener_new(
@@ -230,9 +228,8 @@ struct pageant_pubkey {
 struct pageant_pubkey *pageant_pubkey_copy(struct pageant_pubkey *key);
 void pageant_pubkey_free(struct pageant_pubkey *key);
 
-typedef void (*pageant_key_enum_fn_t)(void *ctx,
-                                      const char *fingerprint,
-                                      const char *comment,
+typedef void (*pageant_key_enum_fn_t)(void *ctx, char **fingerprints,
+                                      const char *comment, uint32_t ext_flags,
                                       struct pageant_pubkey *key);
 int pageant_enum_keys(pageant_key_enum_fn_t callback, void *callback_ctx,
                       char **retstr);
@@ -242,3 +239,19 @@ int pageant_reencrypt_key(struct pageant_pubkey *key, char **retstr);
 int pageant_reencrypt_all_keys(char **retstr);
 int pageant_sign(struct pageant_pubkey *key, ptrlen message, strbuf *out,
                  uint32_t flags, char **retstr);
+
+/*
+ * Definitions for agent protocol extensions.
+ */
+#define PUTTYEXT(base) base "@putty.projects.tartarus.org"
+
+#define KNOWN_EXTENSIONS(X)                             \
+    X(EXT_QUERY, "query")                               \
+    X(EXT_ADD_PPK, PUTTYEXT("add-ppk"))                 \
+    X(EXT_REENCRYPT, PUTTYEXT("reencrypt"))             \
+    X(EXT_REENCRYPT_ALL, PUTTYEXT("reencrypt-all"))     \
+    X(EXT_LIST_EXTENDED, PUTTYEXT("list-extended"))     \
+    /* end of list */
+
+#define LIST_EXTENDED_FLAG_HAS_ENCRYPTED_KEY_FILE    1
+#define LIST_EXTENDED_FLAG_HAS_NO_CLEARTEXT_KEY      2

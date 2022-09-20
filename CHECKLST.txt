@@ -8,7 +8,7 @@ When we begin to work towards a release and want to enable
 pre-releases on the website:
 
  - Make a branch whose tip will be the current state of the
-   pre-release. Regardless of whether the branch is from master or
+   pre-release. Regardless of whether the branch is from main or
    from a prior release branch, the name of the branch must now be in
    the form 'pre-X.YZ', or else the website will fail to link to it
    properly in gitweb and the build script will check out the wrong
@@ -19,10 +19,16 @@ pre-releases on the website:
  - Edit ~/adm/puttysnap.sh on the master machine to enable pre-release
    builds, by changing the 'if false' to 'if true'.
 
+ - Wait for a nightly build to run, so that the first pre-release
+   snapshot actually exists.
+
  - Put the website into pre-release mode, by defining prerel_version()
    in components/Base.mc to return the upcoming version number. Also
    add a news announcement in components/news. (Previous naming
    convention has been to name it in the form 'X.YZ-pre.mi'.)
+
+ - Optionally: write an announcement email for the availability of
+   pre-releases, and send it out to <putty-announce@lists.tartarus.org>.
 
 Things to do during the branch-stabilisation period:
 
@@ -36,6 +42,9 @@ Things to do during the branch-stabilisation period:
    the Unix version with valgrind and/or Address Sanitiser. In
    particular, any headline features for the release should get a
    workout with memory checking enabled!
+
+ - Test the CMake build scripts with the oldest CMake they claim to
+   support, on both Unix and Windows.
 
 Making a release candidate build
 --------------------------------
@@ -73,9 +82,6 @@ Making a release candidate build
  - Make the release tag, pointing at the version-update commit we just
    generated.
 
- - If the release is on a branch (which I expect it generally will
-   be), merge that branch to master.
-
  - Make a release-candidate build from the release tag, and put the
    build.out and build.log files somewhere safe. Normally I store
    these inside the ~/src/putty/X.YZ directory, alongside the git
@@ -108,16 +114,21 @@ Making a release candidate build
     * make sure they basically work
     * check they report the right version number
     * if there's any easily observable behaviour difference between
-      the release branch and master, arrange to observe it
+      the release branch and main, arrange to observe it
     * test that the Windows installer installs successfully
        + on x86 and Arm, and test that putty.exe runs in both cases
     * test that the Unix source tarball unpacks and builds
        + on at least a reasonably current stable Linux distro, and
          also try Debian sid
        + test-build with all of GTK 1, 2 and 3
+       + test-build with -DNOT_X_WINDOWS
+    * test that the Windows source builds with Visual Studio (just in
+      case there's an unguarded clangism that would prevent it)
+    * quick check of the outlying network protocols (Telnet, SUPDUP
+      etc)
     * feed the release-candidate source to Coverity and make sure it
       didn't turn up any last-minute problems
-    * make sure we have a clean run of sctest
+    * make sure we have a clean run of testsc
     * do some testing on a system with a completely clean slate (no
       prior saved session data)
 
@@ -179,25 +190,28 @@ locally, this is the procedure for putting it up on the web.
 
  - Check that downloads via version-numbered URLs all work:
       ../putty/release.pl --version=X.YZ --precheck
-   If this has trouble accessing chiark's ftp server, that is
-   unfortunately normal; add --no-ftp and try again.
 
  - Switch the 'latest' links over to the new release:
     * Update the HTTP redirect at the:www/putty/htaccess .
-    * Update the FTP symlink at chiark:ftp/putty-latest .
 
  - Now verify that downloads via the 'latest' URLs are all redirected
    correctly and work:
       ../putty/release.pl --version=X.YZ --postcheck
 
+ - If the release is on a branch (which I expect it generally will
+   be), merge that branch to main, so that the 'update version number'
+   change appears on main and the snapshots start announcing
+   themselves as post-X.YZ.
+
  - Push all the git repositories:
     * run 'git push' in the website checkout
     * run 'git push' in the wishlist checkout
     * push from the main PuTTY checkout. Typically this one will be
-      pushing both the release tag and an update to the master branch,
-      plus removing the pre-release branch, so you'll want some
+      pushing both the release tag and the merge we just made to the
+      main branch, plus removing the pre-release branch, so you'll
+      want some
       commands along these lines:
-        git push origin master        # update the master branch
+        git push origin main          # update the main branch
         git push origin --tags        # should push the new release tag
         git push origin :pre-X.YZ     # delete the pre-release branch
 
@@ -214,6 +228,17 @@ locally, this is the procedure for putting it up on the web.
    the rsync mirror package (~/ftp/putty-website-mirror) contains a
    subdirectory for the new version and that the links from its
    latest.html point into that subdirectory.
+
+ - Start the process of updating our Windows Store entry:
+    + log into partner.microsoft.com and go to Partner Center
+    + start editing the existing app submission, which should
+      automatically create a new submission
+       * provide a new set of installer URLs, then click "save all"
+         which actually uploads them
+       * change the "what's new in this release" text in the store
+         listing
+       * upload revised screenshots, if necessary
+    + press Publish to submit that to the actual upload process
 
  - Announce the release!
     + Construct a release announcement email whose message body is the

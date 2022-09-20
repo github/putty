@@ -1,0 +1,98 @@
+/*
+ * Windows resources shared between PuTTY and PuTTYtel, to be #include'd
+ * after defining appropriate macros.
+ *
+ * Note that many of these strings mention PuTTY. Due to restrictions in
+ * VC's handling of string concatenation, this can't easily be fixed.
+ * It's fixed up at runtime.
+ *
+ * This file has the more or less arbitrary extension '.rc2' to avoid
+ * IDEs taking it to be a top-level resource script in its own right
+ * (which has been known to happen if the extension was '.rc'), and
+ * also to avoid the resource compiler ignoring everything included
+ * from it (which happens if the extension is '.h').
+ */
+
+/* Accelerators used: clw */
+IDD_ABOUTBOX DIALOG DISCARDABLE 140, 40, 270, 136
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "About PuTTY"
+FONT 8, "MS Shell Dlg"
+BEGIN
+    DEFPUSHBUTTON "&Close", IDOK, 216, 118, 48, 14
+    PUSHBUTTON "View &Licence", IDA_LICENCE, 6, 118, 70, 14
+    PUSHBUTTON "Visit &Web Site", IDA_WEB, 140, 118, 70, 14
+    EDITTEXT IDA_TEXT, 10, 6, 250, 110, ES_READONLY | ES_MULTILINE | ES_CENTER, WS_EX_STATICEDGE
+END
+
+/* Accelerators used: aco */
+IDD_MAINBOX DIALOG DISCARDABLE 0, 0, 300, 252
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "PuTTY Configuration"
+FONT 8, "MS Shell Dlg"
+CLASS "PuTTYConfigBox"
+BEGIN
+END
+
+/* Accelerators used: co */
+IDD_LOGBOX DIALOG DISCARDABLE 100, 20, 300, 119
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "PuTTY Event Log"
+FONT 8, "MS Shell Dlg"
+BEGIN
+    DEFPUSHBUTTON "&Close", IDOK, 135, 102, 44, 14
+    PUSHBUTTON "C&opy", IDN_COPY, 81, 102, 44, 14
+    LISTBOX IDN_LIST, 3, 3, 294, 95, LBS_HASSTRINGS | LBS_USETABSTOPS | WS_VSCROLL | LBS_EXTENDEDSEL
+END
+
+/* No accelerators used */
+IDD_LICENCEBOX DIALOG DISCARDABLE 50, 50, 326, 239
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "PuTTY Licence"
+FONT 8, "MS Shell Dlg"
+BEGIN
+    DEFPUSHBUTTON "OK", IDOK, 148, 219, 44, 14
+
+    EDITTEXT IDA_TEXT, 10, 10, 306, 200, ES_READONLY | ES_MULTILINE | ES_LEFT, WS_EX_STATICEDGE
+END
+
+/* No accelerators used */
+IDD_HOSTKEY DIALOG DISCARDABLE 50, 50, 340, 240
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "PuTTY Security Alert"
+FONT 8, "MS Shell Dlg"
+CLASS "PuTTYHostKeyDialog"
+BEGIN
+    ICON "", IDC_HK_ICON, 10, 18, 0, 0
+
+    PUSHBUTTON "Cancel", IDCANCEL, 288, 220, 40, 14
+    PUSHBUTTON "&Accept", IDC_HK_ACCEPT, 168, 220, 40, 14
+    PUSHBUTTON "Connect &Once", IDC_HK_ONCE, 216, 220, 64, 14
+    PUSHBUTTON "More &info...", IDC_HK_MOREINFO, 60, 220, 64, 14
+    PUSHBUTTON "&Help", IDHELP, 12, 220, 40, 14
+
+    LTEXT "", IDC_HK_TITLE, 40, 20, 300, 12
+
+    EDITTEXT IDC_HK_TEXT, 40, 20, 290, 200, ES_READONLY | ES_MULTILINE | ES_LEFT, WS_EX_STATICEDGE
+END
+
+/* Accelerators used: clw */
+IDD_HK_MOREINFO DIALOG DISCARDABLE 140, 40, 400, 300
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "PuTTY: information about the server's host key"
+FONT 8, "MS Shell Dlg"
+CLASS "PuTTYHostKeyMoreInfo"
+BEGIN
+    DEFPUSHBUTTON "&Close", IDOK, 176, 130, 48, 14
+END
+
+/* Accelerators used: aco */
+IDD_CA_CONFIG DIALOG DISCARDABLE 0, 0, 350, 260
+STYLE DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "PuTTY trusted host certification authorities"
+FONT 8, "MS Shell Dlg"
+CLASS "PuTTYConfigBox"
+BEGIN
+END
+
+#include "version.rc2"

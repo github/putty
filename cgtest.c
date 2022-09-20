@@ -24,6 +24,7 @@
 #define get_random_data get_random_data_diagnostic
 #define console_get_userpass_input console_get_userpass_input_diagnostic
 #define main cmdgen_main
+#define ppk_save_default_parameters ppk_save_cgtest_parameters
 
 #include "cmdgen.c"
 
@@ -32,6 +33,23 @@
 #undef main
 
 static bool cgtest_verbose = false;
+
+const struct ppk_save_parameters ppk_save_cgtest_parameters = {
+    /* Replacement set of key derivation parameters that make this
+     * test suite run a bit faster and also add determinism: we don't
+     * try to auto-scale the number of passes (in case it gets
+     * different answers twice in the test suite when we were
+     * expecting two key files to compare equal), and we specify a
+     * passphrase salt. */
+    .fmt_version = 3,
+    .argon2_flavour = Argon2id,
+    .argon2_mem = 16,
+    .argon2_passes_auto = false,
+    .argon2_passes = 2,
+    .argon2_parallelism = 1,
+    .salt = (const uint8_t *)"SameSaltEachTime",
+    .saltlen = 16,
+};
 
 /*
  * Define the special versions of get_random_data and
@@ -47,10 +65,10 @@ char *get_random_data_diagnostic(int len, const char *device)
 
 static int nprompts, promptsgot;
 static const char *prompts[3];
-int console_get_userpass_input_diagnostic(prompts_t *p)
+SeatPromptResult console_get_userpass_input_diagnostic(prompts_t *p)
 {
     size_t i;
-    int ret = 1;
+    SeatPromptResult ret = SPR_OK;
     for (i = 0; i < p->n_prompts; i++) {
         if (promptsgot < nprompts) {
             prompt_set_result(p->prompts[i], prompts[promptsgot++]);
@@ -59,7 +77,7 @@ int console_get_userpass_input_diagnostic(prompts_t *p)
                        p->prompts[i]->prompt, p->prompts[i]->result->s);
         } else {
             promptsgot++;           /* track number of requests anyway */
-            ret = 0;
+            ret = SPR_SW_ABORT("preloaded prompt unavailable in cgtest");
             if (cgtest_verbose)
                 printf("  prompt \"%s\": no response preloaded\n",
                        p->prompts[i]->prompt);
@@ -353,7 +371,7 @@ int main(int argc, char **argv)
 
         char filename[128], osfilename[128], scfilename[128];
         char pubfilename[128], tmpfilename1[128], tmpfilename2[128];
-        char *fp = NULL;
+        char *fps[SSH_N_FPTYPES];
 
         sprintf(filename, "test-%s.ppk", keytype->name);
         sprintf(pubfilename, "test-%s.pub", keytype->name);
@@ -373,13 +391,14 @@ int main(int argc, char **argv)
          */
         setup_passphrases(NULL);
         test(0, "puttygen", "-L", filename, "-o", pubfilename, NULL);
-        {
+        for (FingerprintType fptype = 0; fptype < SSH_N_FPTYPES; fptype++) {
+            const char *fpname = (fptype == SSH_FPTYPE_MD5 ? "md5" : "sha256");
             char *cmdbuf;
-            fp = NULL;
-            cmdbuf = dupprintf("ssh-keygen -E md5 -l -f '%s' > '%s'",
-                    pubfilename, tmpfilename1);
+            char *fp = NULL;
+            cmdbuf = dupprintf("ssh-keygen -E %s -l -f '%s' > '%s'",
+                               fpname, pubfilename, tmpfilename1);
             if (cgtest_verbose)
-                printf("OpenSSH fp check: %s\n", cmdbuf);
+                printf("OpenSSH %s fp check: %s\n", fpname, cmdbuf);
             if (system(cmdbuf) ||
                 (fp = get_fp(tmpfilename1,
                              CGT_SSH_KEYGEN | keytype->flags)) == NULL) {
@@ -389,10 +408,11 @@ int main(int argc, char **argv)
             sfree(cmdbuf);
             if (fp && cgtest_verbose) {
                 char *line = get_line(tmpfilename1);
-                printf("OpenSSH fp: %s\n", line);
+                printf("OpenSSH %s fp: %s\n", fpname, line);
                 printf("Cleaned up: %s\n", fp);
                 sfree(line);
             }
+            fps[fptype] = fp;
         }
 
         /*
@@ -405,17 +425,22 @@ int main(int argc, char **argv)
          * List the fingerprint of the key.
          */
         setup_passphrases(NULL);
-        test(0, "puttygen", "-l", filename, "-o", tmpfilename1, NULL);
-        if (!fp) {
-            /*
-             * If we can't test fingerprints against OpenSSH, we
-             * can at the very least test equality of all the
-             * fingerprints we generate of this key throughout
-             * testing.
-             */
-            fp = get_fp(tmpfilename1, 0);
-        } else {
-            check_fp(tmpfilename1, fp, "%s initial fp", keytype->name);
+        for (FingerprintType fptype = 0; fptype < SSH_N_FPTYPES; fptype++) {
+            const char *fpname = (fptype == SSH_FPTYPE_MD5 ? "md5" : "sha256");
+            test(0, "puttygen", "-E", fpname, "-l", filename,
+                 "-o", tmpfilename1, NULL);
+            if (!fps[fptype]) {
+                /*
+                 * If we can't test fingerprints against OpenSSH, we
+                 * can at the very least test equality of all the
+                 * fingerprints we generate of this key throughout
+                 * testing.
+                 */
+                fps[fptype] = get_fp(tmpfilename1, 0);
+            } else {
+                check_fp(tmpfilename1, fps[fptype], "%s initial %s fp",
+                         keytype->name, fpname);
+            }
         }
 
         /*
@@ -468,7 +493,8 @@ int main(int argc, char **argv)
              */
             setup_passphrases(NULL);
             test(0, "puttygen", "-l", osfilename, "-o", tmpfilename1, NULL);
-            check_fp(tmpfilename1, fp, "%s openssh clear fp", keytype->name);
+            check_fp(tmpfilename1, fps[SSH_FPTYPE_DEFAULT],
+                     "%s openssh clear fp", keytype->name);
 
             /*
              * List the public half of the OpenSSH-formatted key in
@@ -500,7 +526,8 @@ int main(int argc, char **argv)
              */
             setup_passphrases(NULL);
             test(0, "puttygen", "-l", scfilename, "-o", tmpfilename1, NULL);
-            check_fp(tmpfilename1, fp, "%s ssh.com clear fp", keytype->name);
+            check_fp(tmpfilename1, fps[SSH_FPTYPE_DEFAULT],
+                     "%s ssh.com clear fp", keytype->name);
 
             /*
              * List the public half of the ssh.com-formatted key in
@@ -612,8 +639,8 @@ int main(int argc, char **argv)
              */
             setup_passphrases("sponge2", NULL);
             test(0, "puttygen", "-l", osfilename, "-o", tmpfilename1, NULL);
-            check_fp(tmpfilename1, fp, "%s openssh encrypted fp",
-                     keytype->name);
+            check_fp(tmpfilename1, fps[SSH_FPTYPE_DEFAULT],
+                     "%s openssh encrypted fp", keytype->name);
 
             /*
              * List the public half of the OpenSSH-formatted key in
@@ -653,8 +680,8 @@ int main(int argc, char **argv)
              */
             setup_passphrases("sponge2", NULL);
             test(0, "puttygen", "-l", scfilename, "-o", tmpfilename1, NULL);
-            check_fp(tmpfilename1, fp, "%s ssh.com encrypted fp",
-                     keytype->name);
+            check_fp(tmpfilename1, fps[SSH_FPTYPE_DEFAULT],
+                     "%s ssh.com encrypted fp", keytype->name);
 
             /*
              * List the public half of the ssh.com-formatted key in
@@ -744,7 +771,8 @@ int main(int argc, char **argv)
         setup_passphrases(NULL);
         test(1, "puttygen", "-C", "spurious-new-comment", pubfilename, NULL);
 
-        sfree(fp);
+        for (FingerprintType fptype = 0; fptype < SSH_N_FPTYPES; fptype++)
+            sfree(fps[fptype]);
 
         if (remove_files) {
             remove(filename);
